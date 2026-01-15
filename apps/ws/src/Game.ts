@@ -140,12 +140,12 @@ export class Game{
         //validations
         //is it the same users move
         //is the move valid
-        if(this.moveCount %2 ===0 && user.userId !== this.player1UserId){
-            return ;
-        }
-        if(this.moveCount %2 ===1 && user.userId !== this.player2UserId){
-            return ;
-        }
+        // if(this.moveCount %2 ===0 && user.userId !== this.player1UserId){
+        //     return ;
+        // }
+        // if(this.moveCount %2 ===1 && user.userId !== this.player2UserId){
+        //     return ;
+        // }
         try {
             if(isPromoting(this.board, move.from, move.to)){
                 this.board.move({

@@ -36,6 +36,9 @@ export const Game = () => {
     const [result, setResult] = useState<"WHITE_WINS" | "BLACK_WINS" | "DRAW" | typeof OPPONENT_DISCONNECTED | null>(null);
     const [moves, setMoves] = useState<Move[]>([]);
 
+    useEffect(() => {
+    console.log("moves updated:", moves.at(-1));
+    }, [moves]);
 
     useEffect(() => {
         if(!socket){
@@ -43,7 +46,7 @@ export const Game = () => {
         }
         socket.onmessage = (event) => {
             const message = JSON.parse(event.data)
-            console.log(message);
+            
             switch (message.type) {
                 case INIT_GAME:
                     setBoard(chess.board())
@@ -57,19 +60,23 @@ export const Game = () => {
                     break;
                 case MOVE:
                     const move = message.payload;
-                    const moves = chess.moves({verbose: true});
-                    if(moves.map(x => JSON.stringify(x)).includes(JSON.stringify(move)))return;
+                    // const moves = chess.moves({verbose: true});
+                    // if(moves.map(x => JSON.stringify(x)).includes(JSON.stringify(move)))return;
                     if(isPromoting(chess, move.from, move.to)){
                         chess.move({
                             from: move.from,
                             to: move.to,
+
                             promotion: 'q'
                         });
                     } else {
                         chess.move(move);
                     }
-                    setBoard(chess.board())
+                    setBoard(chess.board());
+                    
                     setMoves(moves => [...moves, move]);
+
+
                     // setMoveCount(chess.history().length);
                     break;
                 case GAME_OVER:
@@ -114,6 +121,7 @@ export const Game = () => {
 
 
     if (!socket) return <div>Connecting...</div>
+
     return <div>
         <div className="flex justify-center text-white mt-4">
             {gameMetadata?.blackPlayer?.name} vs {gameMetadata?.whitePlayer?.name}
@@ -125,7 +133,7 @@ export const Game = () => {
             <div className="pt-8 max-w-5xl flex justify-center w-full">
                 <div className="grid grid-cols-6 gap-4">
                     <div className="col-span-4">
-                        <ChessBoard gameId  ={gameId ?? ""} chess={chess} setBoard={setBoard} socket={socket} board = {board} playColor = {user?.id === gameMetadata?.blackPlayer?.id ? "b" : "w"}/>
+                        <ChessBoard lastMove={moves.at(-1)!} gameId  ={gameId ?? ""} chess={chess} setBoard={setBoard} socket={socket} board = {board} playColor = {user?.id === gameMetadata?.blackPlayer?.id ? "b" : "w"}/>
                     </div>
 
                     <div className="col-span-2 justify-center flex  bg-slate-900" >

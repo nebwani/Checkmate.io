@@ -42,7 +42,7 @@ export class SocketManager {
         }
 
         users?.forEach(user => {
-            user.socket.send(message);
+            user.socket.send(message);            
         })
     }
     removeUser(user: User){

@@ -6,6 +6,7 @@ import { Chess, Move } from "chess.js";
 import { useNavigate, useParams } from "react-router-dom";
 import type { User } from "../store/src/atoms/user";
 import { useUser } from "../store/src/hooks/useUser";
+import { MovesTable } from "../components/MovesTable"
 
 export const INIT_GAME = "init_game";
 export const MOVE = "move";
@@ -19,6 +20,17 @@ export const GAME_JOINED = "game_joined";
 interface Metadata {
     blackPlayer: {id: string, name: string};
     whitePlayer: {id: string, name: string};
+}
+
+function generateSanMoves(moves: { from: string; to: string; promotion?: string }[]) {
+  const chess = new Chess();
+  return moves.map(move => {
+    const result = chess.move(move);
+    if (!result) {
+      throw new Error("Invalid move while generating SAN");
+    }
+    return result.san;
+  });
 }
 
 export const Game = () => {
@@ -35,10 +47,7 @@ export const Game = () => {
     const [gameMetadata, setGameMetadata] = useState<Metadata | null>(null);
     const [result, setResult] = useState<"WHITE_WINS" | "BLACK_WINS" | "DRAW" | typeof OPPONENT_DISCONNECTED | null>(null);
     const [moves, setMoves] = useState<Move[]>([]);
-
-    useEffect(() => {
-    console.log("moves updated:", moves.at(-1));
-    }, [moves]);
+    const sanMoves = generateSanMoves(moves);
 
     useEffect(() => {
         if(!socket){
@@ -122,6 +131,8 @@ export const Game = () => {
 
     if (!socket) return <div>Connecting...</div>
 
+    
+
     return <div>
         <div className="flex justify-center text-white mt-4">
             {gameMetadata?.blackPlayer?.name} vs {gameMetadata?.whitePlayer?.name}
@@ -135,9 +146,23 @@ export const Game = () => {
                     <div className="col-span-4">
                         <ChessBoard lastMove={moves.at(-1)!} gameId  ={gameId ?? ""} chess={chess} setBoard={setBoard} socket={socket} board = {board} playColor = {user?.id === gameMetadata?.blackPlayer?.id ? "b" : "w"}/>
                     </div>
+                    
 
-                    <div className="col-span-2 justify-center flex  bg-slate-900" >
-                        <div className="pt-10">
+                    <div className="col-span-2 justify-center bg-slate-900" >
+                        
+                        <div className=" text-white">
+                            {started && <div>
+                                    <div className="text-2xl justify-center flex mt-2 mb-4 underline">Moves Table</div>
+                                    <div className="grid grid-cols-[50px_1fr_1fr] gap-2 items-center">
+                                        <p>S. No.</p>
+                                        <p>White</p>
+                                        <p>Black</p>
+                                    </div>
+                                    <MovesTable sanMoves={sanMoves} currentMoveIndex={sanMoves.length - 1}/>
+                                </div>
+                            }
+                        </div>
+                        <div className="mt-10 flex justify-center">
                             {!started && gameId === "random" && <Button onClick={() => {
                                 socket.send(JSON.stringify({
                                     type: INIT_GAME 

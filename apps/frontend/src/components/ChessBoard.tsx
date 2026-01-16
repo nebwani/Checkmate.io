@@ -53,6 +53,7 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
     const isMyTurn = playColor === chess.turn();
     const [legalMoves, setLegalMoves] = useState<Move[]>([]);
     const isBlack = playColor === "b";
+    const audio = new Audio("/MoveSound.mp3");
 
     return <div>
         {(isBlack ? [...board].reverse() : board).map((row, rowIndex) => {
@@ -101,6 +102,7 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                                         }
                                     }
                                 }))
+                                audio.play();
 
                                 setFrom(null);
                                 setLegalMoves([]);

@@ -8,7 +8,7 @@ datasource db {
 }
 
 model User {
-  id            String | undefined   @id @default(uuid())
+  id            String    @id @default(uuid())
   username      String?   @unique
   name          String?   
   provider      AuthProvider
@@ -39,6 +39,10 @@ model Game {
   moves         Move[]
   opening       String?
   event         String?
+  white_time    Int        @default(300000)
+  black_time    Int        @default(300000)
+  last_move_at  BigInt        @default(0)
+
 
   @@index([status, result])
 }
@@ -55,7 +59,7 @@ model Move {
   endFen      String
   timeTaken   Int?     @default(0)
   createdAt   DateTime @default(now())
-
+  
   @@index([gameId])
 }
 

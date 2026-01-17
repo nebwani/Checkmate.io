@@ -47,7 +47,22 @@ export const Game = () => {
     const [gameMetadata, setGameMetadata] = useState<Metadata | null>(null);
     const [result, setResult] = useState<"WHITE_WINS" | "BLACK_WINS" | "DRAW" | typeof OPPONENT_DISCONNECTED | null>(null);
     const [moves, setMoves] = useState<Move[]>([]);
+    const [whiteTime, setWhiteTime] = useState(0);
+    const [blackTime, setBlackTime] = useState(0);
     const sanMoves = generateSanMoves(moves);
+
+    useEffect(() => {
+    const interval = setInterval(() => {
+        if (chess.turn() === "w") {
+        setWhiteTime(t => Math.max(0, t - 100));
+        } else {
+        setBlackTime(t => Math.max(0, t - 100));
+        }
+    }, 100);
+
+    return () => clearInterval(interval);
+    }, [chess.turn()]);
+
 
     useEffect(() => {
         if(!socket){
@@ -68,9 +83,14 @@ export const Game = () => {
                     })
                     break;
                 case MOVE:
-                    const move = message.payload;
+                    const move = message.payload.move;
+                    console.log(message.payload);
+                    
                     // const moves = chess.moves({verbose: true});
                     // if(moves.map(x => JSON.stringify(x)).includes(JSON.stringify(move)))return;
+                    // const { from, to } = move;
+                    setWhiteTime(message.payload.whiteTime);
+                    setBlackTime(message.payload.blackTime);
                     if(isPromoting(chess, move.from, move.to)){
                         chess.move({
                             from: move.from,
@@ -79,7 +99,7 @@ export const Game = () => {
                             promotion: 'q'
                         });
                     } else {
-                        chess.move(move);
+                        chess.move({from: move.from, to: move.to});
                     }
                     setBoard(chess.board());
                     
@@ -143,9 +163,15 @@ export const Game = () => {
         <div className="flex justify-center">
             <div className="pt-8 max-w-5xl flex justify-center w-full">
                 <div className="grid grid-cols-6 gap-4">
+                    {/* <div>
+                        {whiteTime}
+                    </div> */}
                     <div className="col-span-4">
                         <ChessBoard lastMove={moves.at(-1)!} gameId  ={gameId ?? ""} chess={chess} setBoard={setBoard} socket={socket} board = {board} playColor = {user?.id === gameMetadata?.blackPlayer?.id ? "b" : "w"}/>
                     </div>
+                    {/* <div>
+                        {blackTime}
+                    </div> */}
                     
 
                     <div className="col-span-2 justify-center bg-slate-900" >

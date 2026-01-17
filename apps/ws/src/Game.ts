@@ -3,7 +3,7 @@ import type WebSocket from "ws";
 import { GAME_OVER, INIT_GAME, MOVE } from "./messages.js";
 import{db} from "@repo/db"
 import { randomUUID } from "crypto"
-import { SocketManager, type User } from "./socketManager.js";
+import { SocketManager, type User } from "./SocketManager.js"
 
 export function isPromoting(chess: Chess, from: Square, to: Square){
         if(!from){
@@ -81,6 +81,7 @@ export class Game{
     
 
     async createGameInDb(){
+        const now = BigInt(Date.now())
         const game = await db.game.create({
             data: {
                 id: this.gameId,
@@ -97,6 +98,9 @@ export class Game{
                         id: this.player2UserId ?? ""
                     }
                 },
+                white_time: 10*1000,
+                black_time: 10*1000,
+                last_move_at: now,
             },
             include: {
                 whitePlayer: true,
@@ -110,6 +114,7 @@ export class Game{
         from: string;
         to: string;
     }) {
+
         await db.$transaction([
             db.move.create({
                 data: {
@@ -146,12 +151,75 @@ export class Game{
         // if(this.moveCount %2 ===1 && user.userId !== this.player2UserId){
         //     return ;
         // }
+        const cur_game = await db.game.findUnique({
+            where: {id: this.gameId}
+        });
+        if(!cur_game) {
+            return;
+        }
+        const now = Date.now();
+        const elapsed = Number(BigInt(now) - cur_game.last_move_at);
+
+        if (this.moveCount%2 === 0) {
+            cur_game.white_time -= elapsed;
+        } else {
+            cur_game.black_time -= elapsed;
+        }
+
+        if (cur_game.white_time <= 0) {
+            SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
+                type: GAME_OVER,
+                payload: {
+                    result: "BLACK_WINS_ON_TIME"
+                }
+            }))
+            await db.game.update({
+                data: {
+                    result: "BLACK_WINS",
+                    status: "COMPLETED"
+                },      
+                where: {
+                    id: this.gameId,
+
+                }
+            })
+            return;
+        }
+
+        if (cur_game.black_time <= 0) {
+            SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
+                type: GAME_OVER,
+                payload: {
+                    result: "WHITE_WINS_ON_TIME"
+                }
+            }))
+            await db.game.update({
+                data: {
+                    result: "WHITE_WINS",
+                    status: "COMPLETED"
+                },      
+                where: {
+                    id: this.gameId,
+
+                }
+            })
+            return;
+        }
+        await db.game.update({
+            where: { id: this.gameId },
+            data: {
+                white_time: cur_game.white_time,
+                black_time: cur_game.black_time,
+                last_move_at: now,
+            },
+        });
+
         try {
             if(isPromoting(this.board, move.from, move.to)){
                 this.board.move({
                     from: move.from,
                     to: move.to,
-                    promotion: 'q'
+                    promotion: 'q',
                 });
             } else {
                 this.board.move({
@@ -169,7 +237,11 @@ export class Game{
         await this.addMoveToDb(move);
         SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
             type: MOVE,
-            payload: move
+            payload: {
+                move,
+                whiteTime: cur_game.white_time,
+                blackTime: cur_game.black_time,
+            }
         }))
 
         if(this.board.isGameOver()){

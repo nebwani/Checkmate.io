@@ -6,10 +6,13 @@ import { initPassport } from "./passport.js";
 import session from 'express-session';
 import authRoute from "./router/auth.js";
 import dotenv from "dotenv";
+import "dotenv/config";
 
 const app = express();
 
-dotenv.config();
+dotenv.config({
+  path: new URL("../.env", import.meta.url).pathname,
+});
 
 app.use(session({
   secret: 'keyboard-cat',

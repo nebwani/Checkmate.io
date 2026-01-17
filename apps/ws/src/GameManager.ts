@@ -4,7 +4,7 @@ import { Game, isPromoting } from "./Game.js";
 // import { Move } from "chess.js";
 
 import { db } from "@repo/db";
-import { SocketManager, User } from "./socketManager.js";
+import { SocketManager, User } from "./SocketManager.js";
 import type { Square } from "chess.js";
 
 

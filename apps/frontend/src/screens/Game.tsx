@@ -22,6 +22,14 @@ interface Metadata {
     whitePlayer: {id: string, name: string};
 }
 
+function formatTime(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
 function generateSanMoves(moves: { from: string; to: string; promotion?: string }[]) {
   const chess = new Chess();
   return moves.map(move => {
@@ -74,13 +82,16 @@ export const Game = () => {
             switch (message.type) {
                 case INIT_GAME:
                     setBoard(chess.board())
-                    setColor(message.payload.color)
                     setStarted(true);
+                    setWhiteTime(10*60*1000);
+                    setBlackTime(10*60*1000);
                     navigate(`/game/${message.payload.gameId}`)
                     setGameMetadata({
                         blackPlayer: message.payload.blackPlayer,
                         whitePlayer: message.payload.whitePlayer,
                     })
+                    setColor(user?.id === message.payload.blackPlayer.id ? "b" : "w");
+                    console.log(color);
                     break;
                 case MOVE:
                     const move = message.payload.move;
@@ -102,6 +113,7 @@ export const Game = () => {
                         chess.move({from: move.from, to: move.to});
                     }
                     setBoard(chess.board());
+                        
                     
                     setMoves(moves => [...moves, move]);
 
@@ -163,15 +175,27 @@ export const Game = () => {
         <div className="flex justify-center">
             <div className="pt-8 max-w-5xl flex justify-center w-full">
                 <div className="grid grid-cols-6 gap-4">
-                    {/* <div>
-                        {whiteTime}
-                    </div> */}
+                    
                     <div className="col-span-4">
+                        <div className="mb-2 flex justify-end p-1">
+                            <div className="ml-auto px-2">
+                                <div className="w-20 h-10 border text-white text-xl border-white flex items-center justify-center rounded">
+                                    {color === "w" ? formatTime(blackTime) : formatTime(whiteTime)}
+                                </div>
+                                
+                            </div>
+                            
+                        </div>
                         <ChessBoard lastMove={moves.at(-1)!} gameId  ={gameId ?? ""} chess={chess} setBoard={setBoard} socket={socket} board = {board} playColor = {user?.id === gameMetadata?.blackPlayer?.id ? "b" : "w"}/>
+                        <div className="flex mt-2 justify-end p-1">
+                            <div className="ml-auto px-2">
+                                <div className="w-20 h-10 border text-white text-xl border-white flex items-center justify-center rounded">
+                                    {color === "w" ? formatTime(whiteTime) : formatTime(blackTime)}
+                                </div>
+                                
+                            </div>          
+                        </div>
                     </div>
-                    {/* <div>
-                        {blackTime}
-                    </div> */}
                     
 
                     <div className="col-span-2 justify-center bg-slate-900" >

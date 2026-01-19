@@ -98,8 +98,8 @@ export class Game{
                         id: this.player2UserId ?? ""
                     }
                 },
-                white_time: 10*1000,
-                black_time: 10*1000,
+                white_time: 10*60*1000,
+                black_time: 10*60*1000,
                 last_move_at: now,
             },
             include: {

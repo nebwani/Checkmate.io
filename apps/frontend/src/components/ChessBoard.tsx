@@ -130,20 +130,20 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                             setTo(null);
                         }
                         
-                    }} key={cellIndex} className={`z-50 w-16 h-16 ${(rowIndex + cellIndex) %2 ===0 ? "bg-[#fdcf9e]" : "bg-[#c4864a]"} flex justify-center items-center` + (isActive && from === squareRepresentation ? " border-2 border-red-500 bg-red-200 " : "") + ((lastMove?.from === squareRepresentation || lastMove?.to === squareRepresentation)  ? " bg-red-900" :  "")}>
+                    }} key={cellIndex} className={`z-50 w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 ${(rowIndex + cellIndex) %2 ===0 ? "bg-[#fdcf9e]" : "bg-[#c4864a]"} flex justify-center items-center` + (isActive && from === squareRepresentation ? " border-2 border-red-500 bg-red-200 " : "") + ((lastMove?.from === squareRepresentation || lastMove?.to === squareRepresentation)  ? " bg-red-900" :  "")}>
                         <div className="w-full justify-center flex h-full">
                             <div className="h-full justify-center flex items-center">
                                 {
-                                    cell ? <img className="w-16 h-16" src={`/${cell?.color === "b" ? cell?.type : `${cell?.type?.toUpperCase()} Copy`}.png`}/> : null
+                                    cell ? <img className="w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16" src={`/${cell?.color === "b" ? cell?.type : `${cell?.type?.toUpperCase()} Copy`}.png`}/> : null
                                     
                                 }
 
                                 {
-                                    ((!isBlack && rowIndex === 7) || (isBlack && rowIndex === 0)) ? <div className="absolute h-16 w-16 z-50 flex items-end justify-end"><div className="absolute w-5 h-5 z-50 text-right items-end text-[15px] font-mono font-extrabold">{squareRepresentation[0]}</div></div> : null
+                                    ((!isBlack && rowIndex === 7) || (isBlack && rowIndex === 0)) ? <div className="absolute w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 z-50 flex items-end justify-end"><div className="absolute w-5 h-5 z-50 text-right items-end text-[15px] font-mono font-extrabold">{squareRepresentation[0]}</div></div> : null
                                     
                                 }
                                 {
-                                    ((!isBlack && cellIndex === 0) || (isBlack && cellIndex === 7)) ? <div className="absolute h-16 w-16 z-50 flex items-top justify-left"><div className="absolute w-5 h-5 z-50 text-left text-[15px] font-mono font-extrabold">{squareRepresentation[1]}</div></div> : null
+                                    ((!isBlack && cellIndex === 0) || (isBlack && cellIndex === 7)) ? <div className="absolute w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 z-50 flex items-top justify-left"><div className="absolute w-5 h-5 z-50 text-left text-[15px] font-mono font-extrabold">{squareRepresentation[1]}</div></div> : null
                                 }
                                 
                                 {legalMoves.some(m => m.to === squareRepresentation) && ( <div className=" h-4 w-4 rounded-full bg-black/30 pointer-events-none z+10 flex" /> )}

@@ -4,6 +4,7 @@ import { GAME_OVER, INIT_GAME, MOVE } from "./messages.js";
 import{db} from "@repo/db"
 import { randomUUID } from "crypto"
 import { SocketManager, type User } from "./SocketManager.js"
+import { calculateElo } from "./elo.js";
 
 export function isPromoting(chess: Chess, from: Square, to: Square){
         if(!from){
@@ -69,8 +70,8 @@ export class Game{
         type: INIT_GAME,
         payload: {
             gameId: this.gameId,
-            whitePlayer: { name: users.find(user => user.id === this.player1UserId)?.name, id: this.player1UserId },
-            blackPlayer: { name: users.find(user => user.id === this.player2UserId)?.name, id: this.player2UserId },
+            whitePlayer: { name: users.find(user => user.id === this.player1UserId)?.name, id: this.player1UserId, rating: users.find(user => user.id === this.player1UserId)?.rating},
+            blackPlayer: { name: users.find(user => user.id === this.player2UserId)?.name, id: this.player2UserId, rating: users.find(user => user.id === this.player2UserId)?.rating},
             fen: this.board.fen(),
             moves:[]
         }
@@ -247,12 +248,47 @@ export class Game{
         if(this.board.isGameOver()){
             const result = this.board.isDraw() ? "DRAW" : this.board.turn() === 'w' ? "BLACK_WINS" : "WHITE_WINS";
 
+            const white = await db.user.findUnique({
+                where: { id: this.player1UserId },
+            });
+
+            const black = await db.user.findUnique({
+                where: { id: this.player2UserId! },
+            });
+
+            if (!white || !black) return;
+
+            const {newWhite, newBlack} = calculateElo(white.rating, black.rating, result);
+
             SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
                 type: GAME_OVER,
                 payload: {
-                    result
+                    result,
+                    whiteRating: newWhite,
+                    blackRating: newBlack
                 }
             }))
+
+            await db.$transaction([
+                db.user.update({
+                    where: { id: white.id },
+                    data: { rating: newWhite },
+                }),
+                db.user.update({
+                    where: { id: black.id },
+                    data: { rating: newBlack },
+                }),
+                db.game.update({
+                    data: {
+                        result,
+                        status: "COMPLETED"
+                    },      
+                    where: {
+                        id: this.gameId,
+
+                    }
+                })
+            ])
 
             await db.game.update({
                 data: {

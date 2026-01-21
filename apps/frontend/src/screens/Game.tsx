@@ -18,8 +18,8 @@ export const GAME_JOINED = "game_joined";
 
 
 interface Metadata {
-    blackPlayer: {id: string, name: string};
-    whitePlayer: {id: string, name: string};
+    blackPlayer: {id: string, name: string, rating: number};
+    whitePlayer: {id: string, name: string, rating: number};
 }
 
 function formatTime(ms: number) {
@@ -167,17 +167,26 @@ export const Game = () => {
 
     return <div>
         <div className="flex justify-center text-white mt-4">
-            {gameMetadata?.blackPlayer?.name} vs {gameMetadata?.whitePlayer?.name}
+            {gameMetadata?.whitePlayer?.name} vs {gameMetadata?.blackPlayer?.name}
         </div>
         {result && <div className="flex justify-center text-white mt-4">
             {result}
         </div>}
         <div className="flex justify-center">
             <div className="pt-8 max-w-5xl flex justify-center w-full">
-                <div className="grid grid-cols-6 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                     
-                    <div className="col-span-4">
+                    <div className="md:col-span-4 flex flex-col">
                         <div className="mb-2 flex justify-end p-1">
+                            <div className="mr-auto px-2">
+                                <div className="text-white text-l flex items-center justify-center">
+                                    {color === "w" ? gameMetadata?.blackPlayer.name : gameMetadata?.whitePlayer.name}
+                                </div>
+                                <div className="text-white text-[12px]">
+                                    {color === "w" ? gameMetadata?.blackPlayer.rating : gameMetadata?.whitePlayer.rating}
+                                </div>
+                                
+                            </div>
                             <div className="ml-auto px-2">
                                 <div className="w-20 h-10 border text-white text-xl border-white flex items-center justify-center rounded">
                                     {color === "w" ? formatTime(blackTime) : formatTime(whiteTime)}
@@ -186,8 +195,19 @@ export const Game = () => {
                             </div>
                             
                         </div>
-                        <ChessBoard lastMove={moves.at(-1)!} gameId  ={gameId ?? ""} chess={chess} setBoard={setBoard} socket={socket} board = {board} playColor = {user?.id === gameMetadata?.blackPlayer?.id ? "b" : "w"}/>
+                        <div className="flex items-center justify-center">
+                            <ChessBoard lastMove={moves.at(-1)!} gameId  ={gameId ?? ""} chess={chess} setBoard={setBoard} socket={socket} board = {board} playColor = {user?.id === gameMetadata?.blackPlayer?.id ? "b" : "w"}/>
+                        </div>
                         <div className="flex mt-2 justify-end p-1">
+                            <div className="mr-auto px-2">
+                                <div className="text-white text-l flex items-center justify-center">
+                                    {color === "w" ? gameMetadata?.whitePlayer.name : gameMetadata?.blackPlayer.name}
+                                </div>
+                                <div className="text-white text-[12px]">
+                                    {color === "w" ? gameMetadata?.whitePlayer.rating : gameMetadata?.blackPlayer.rating}
+                                </div>
+                                
+                            </div>          
                             <div className="ml-auto px-2">
                                 <div className="w-20 h-10 border text-white text-xl border-white flex items-center justify-center rounded">
                                     {color === "w" ? formatTime(whiteTime) : formatTime(blackTime)}

@@ -119,11 +119,13 @@ export class GameManager{
                         moves: gameFromDb.moves,
                         blackPlayer: {
                             id: gameFromDb.blackPlayer.id,
-                            name: gameFromDb.blackPlayer.name
+                            name: gameFromDb.blackPlayer.name,
+                            rating: gameFromDb.blackPlayer.rating
                         },
                         whitePlayer: {
                             id: gameFromDb.whitePlayer.id,
-                            name: gameFromDb.whitePlayer.name
+                            name: gameFromDb.whitePlayer.name,
+                            rating: gameFromDb.whitePlayer.rating
                         }
                     }
                 }));    

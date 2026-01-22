@@ -2,7 +2,7 @@ import { WebSocketServer } from 'ws';
 import { GameManager } from './GameManager.js';
 import url from "url";
 import { extractUserId } from './auth/index.js';
-import { User } from './socketManager.js';
+import { User } from './SocketManager.js';
 
 const wss = new WebSocketServer({ port: 8080 });
 

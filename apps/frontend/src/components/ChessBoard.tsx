@@ -1,6 +1,7 @@
 import { Chess, Move, type Color, type PieceSymbol, type Square } from "chess.js";
 import { useState } from "react";
 import { MOVE } from "../screens/Game.tsx";
+import PromotionModal from "./PromotionModal.tsx";
 
 export function isPromoting(chess: Chess, from: Square, to: Square){
         if(!from){
@@ -27,7 +28,7 @@ export function isPromoting(chess: Chess, from: Square, to: Square){
     }
 
 
-export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor , lastMove} : {
+export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor , lastMove, spectatorMode} : {
     gameId: string | null   ;
     chess: Chess;
     setBoard: React.Dispatch<React.SetStateAction<({
@@ -46,16 +47,40 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
         from: string
         to: string
     } | null
+    spectatorMode: boolean;
 }) => {
     const [from, setFrom] = useState<null | Square>(null);
     const [to, setTo] = useState<null | Square>(null);
     const [isActive, setIsActive] = useState<boolean>(false);
     const isMyTurn = playColor === chess.turn();
     const [legalMoves, setLegalMoves] = useState<Move[]>([]);
+    const [promotion, setPromotion] = useState<{from: Square; to: Square;} | null>(null);
     const isBlack = playColor === "b";
     const audio = new Audio("/MoveSound.mp3");
 
+    function handlePromotionSelect(piece: PieceSymbol) {
+        if(!promotion) return;
+
+        socket.send(JSON.stringify({
+            type: MOVE,
+            payload: {
+                gameId,
+                move: {
+                    from: promotion.from,
+                    to: promotion.to,
+                    promotion: piece
+                }
+            }
+        }));
+
+        setPromotion(null);
+        setFrom(null);
+        setLegalMoves([]);
+    }
+
+
     return <div>
+        {promotion && (<PromotionModal color={chess.turn()} onSelect={handlePromotionSelect}></PromotionModal>)}
         {(isBlack ? [...board].reverse() : board).map((row, rowIndex) => {
             return <div key={rowIndex} className="flex">
                 {(isBlack ? [...row].reverse() : row).map((cell, cellIndex) => {
@@ -70,6 +95,11 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                     const squareRepresentation = `${file}${rank}` as Square;
                     // const squareRepresentation = String.fromCharCode(97 + (cellIndex % 8)) + "" + (8 - rowIndex) as Square
                     return <div onClick={() => {
+                        
+                        if(spectatorMode){
+                            return;
+                        }
+
                         if(playColor !== (chess.turn() === 'w' ? "w" : "b")){
                             return;
                         }
@@ -91,6 +121,11 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                         } else {
      
                             if(legalMoves.some(m => m.to === squareRepresentation)){
+
+                                if (isPromoting(chess, from, squareRepresentation)) {
+                                    setPromotion({ from, to: squareRepresentation });
+                                    return;
+                                }
     
                                 socket.send(JSON.stringify({
                                     type: MOVE,
@@ -130,7 +165,7 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                             setTo(null);
                         }
                         
-                    }} key={cellIndex} className={`z-50 w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 ${(rowIndex + cellIndex) %2 ===0 ? "bg-[#fdcf9e]" : "bg-[#c4864a]"} flex justify-center items-center` + (isActive && from === squareRepresentation ? " border-2 border-red-500 bg-red-200 " : "") + ((lastMove?.from === squareRepresentation || lastMove?.to === squareRepresentation)  ? " bg-red-900" :  "")}>
+                    }} key={cellIndex} className={`w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 ${(rowIndex + cellIndex) %2 ===0 ? "bg-[#fdcf9e]" : "bg-[#c4864a]"} flex justify-center items-center` + (isActive && from === squareRepresentation ? " border-2 border-red-500 bg-red-200 " : "") + ((lastMove?.from === squareRepresentation || lastMove?.to === squareRepresentation)  ? " bg-red-900" :  "")}>
                         <div className="w-full justify-center flex h-full">
                             <div className="h-full justify-center flex items-center">
                                 {
@@ -139,11 +174,11 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                                 }
 
                                 {
-                                    ((!isBlack && rowIndex === 7) || (isBlack && rowIndex === 0)) ? <div className="absolute w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 z-50 flex items-end justify-end"><div className="absolute w-5 h-5 z-50 text-right items-end text-[15px] font-mono font-extrabold">{squareRepresentation[0]}</div></div> : null
+                                    ((!isBlack && rowIndex === 7) || (isBlack && rowIndex === 0)) ? <div className="absolute w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 z-100 flex items-end justify-end"><div className="absolute w-5 h-5 z-50 text-right items-end text-[15px] font-mono font-extrabold">{squareRepresentation[0]}</div></div> : null
                                     
                                 }
                                 {
-                                    ((!isBlack && cellIndex === 0) || (isBlack && cellIndex === 7)) ? <div className="absolute w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 z-50 flex items-top justify-left"><div className="absolute w-5 h-5 z-50 text-left text-[15px] font-mono font-extrabold">{squareRepresentation[1]}</div></div> : null
+                                    ((!isBlack && cellIndex === 0) || (isBlack && cellIndex === 7)) ? <div className="absolute w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16     z-100 flex items-top justify-left"><div className="absolute w-5 h-5 z-50 text-left text-[15px] font-mono font-extrabold">{squareRepresentation[1]}</div></div> : null
                                 }
                                 
                                 {legalMoves.some(m => m.to === squareRepresentation) && ( <div className=" h-4 w-4 rounded-full bg-black/30 pointer-events-none z+10 flex" /> )}
@@ -155,4 +190,6 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
             </div>
         })}        
     </div>
+
+    
 }

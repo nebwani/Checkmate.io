@@ -2,7 +2,7 @@ import { use, useEffect, useState } from "react"
 import { Button } from "../components/Button"
 import { ChessBoard, isPromoting } from "../components/ChessBoard"
 import { useSocket } from "../hooks/useSocket"
-import { Chess, Move } from "chess.js";
+import { Chess, Move, type Square } from "chess.js";
 import { useNavigate, useParams } from "react-router-dom";
 import type { User } from "../store/src/atoms/user";
 import { useUser } from "../store/src/hooks/useUser";
@@ -51,6 +51,7 @@ export const Game = () => {
     const [chess, setChess] = useState(new Chess());
     const [board, setBoard] = useState(chess.board());
     const [started, setStarted] = useState(false);
+    const [initiated, setInitiated] = useState(false);
     const [color, setColor] = useState<"w" | "b" | null>(null);
     const [gameMetadata, setGameMetadata] = useState<Metadata | null>(null);
     const [result, setResult] = useState<"WHITE_WINS" | "BLACK_WINS" | "DRAW" | typeof OPPONENT_DISCONNECTED | null>(null);
@@ -106,8 +107,7 @@ export const Game = () => {
                         chess.move({
                             from: move.from,
                             to: move.to,
-
-                            promotion: 'q'
+                            promotion: move.promotion // may be undefined → chess.js handles it
                         });
                     } else {
                         chess.move({from: move.from, to: move.to});
@@ -122,6 +122,10 @@ export const Game = () => {
                     break;
                 case GAME_OVER:
                     setResult(message.payload.result);
+                    setGameMetadata({
+                        blackPlayer: {id: gameMetadata?.blackPlayer?.id!, name: gameMetadata?.blackPlayer?.name!, rating: message.payload.blackRating},
+                        whitePlayer: {id: gameMetadata?.whitePlayer?.id!, name: gameMetadata?.whitePlayer?.name!, rating: message.payload.whiteRating}
+                    })
                     break;
             
                 case OPPONENT_DISCONNECTED:
@@ -136,11 +140,12 @@ export const Game = () => {
                     setStarted(true);
                     setMoves(message.payload.moves);
                     message.payload.moves.map(x => {
-                        if(isPromoting(chess, x.from, x.to)){
-                            chess.move({...x, promotion: 'q'})
-                        } else {
-                            chess.move(x);
-                        }
+                        // if(isPromoting(chess, x.from, x.to)){
+                        //     chess.move({...x, promotion: 'q'})
+                        // } else {
+                        //     chess.move(x);
+                        // }
+                        chess.move(x);
                         
                     })
                     setBoard(chess.board());
@@ -162,11 +167,10 @@ export const Game = () => {
 
 
     if (!socket) return <div>Connecting...</div>
-
     
 
     return <div>
-        <div className="flex justify-center text-white mt-4">
+        <div className="flex justify-center text-white pt-4">
             {gameMetadata?.whitePlayer?.name} vs {gameMetadata?.blackPlayer?.name}
         </div>
         {result && <div className="flex justify-center text-white mt-4">
@@ -180,10 +184,10 @@ export const Game = () => {
                         <div className="mb-2 flex justify-end p-1">
                             <div className="mr-auto px-2">
                                 <div className="text-white text-l flex items-center justify-center">
-                                    {color === "w" ? gameMetadata?.blackPlayer.name : gameMetadata?.whitePlayer.name}
+                                    {color === "w" ? gameMetadata?.blackPlayer?.name : gameMetadata?.whitePlayer?.name}
                                 </div>
                                 <div className="text-white text-[12px]">
-                                    {color === "w" ? gameMetadata?.blackPlayer.rating : gameMetadata?.whitePlayer.rating}
+                                    {color === "w" ? gameMetadata?.blackPlayer?.rating : gameMetadata?.whitePlayer?.rating}
                                 </div>
                                 
                             </div>
@@ -195,16 +199,16 @@ export const Game = () => {
                             </div>
                             
                         </div>
-                        <div className="flex items-center justify-center">
-                            <ChessBoard lastMove={moves.at(-1)!} gameId  ={gameId ?? ""} chess={chess} setBoard={setBoard} socket={socket} board = {board} playColor = {user?.id === gameMetadata?.blackPlayer?.id ? "b" : "w"}/>
+                        <div className={`flex items-center justify-center ${!started ? "pointer-events-none" : ""}`}>
+                            <ChessBoard lastMove={moves.at(-1)!} gameId  ={gameId ?? ""} chess={chess} setBoard={setBoard} socket={socket} board = {board} playColor = {user?.id === gameMetadata?.blackPlayer?.id ? "b" : "w"} spectatorMode = {user?.id !== gameMetadata?.blackPlayer.id && user?.id !== gameMetadata?.whitePlayer.id}/>
                         </div>
                         <div className="flex mt-2 justify-end p-1">
                             <div className="mr-auto px-2">
                                 <div className="text-white text-l flex items-center justify-center">
-                                    {color === "w" ? gameMetadata?.whitePlayer.name : gameMetadata?.blackPlayer.name}
+                                    {color === "w" ? gameMetadata?.whitePlayer?.name : gameMetadata?.blackPlayer?.name}
                                 </div>
                                 <div className="text-white text-[12px]">
-                                    {color === "w" ? gameMetadata?.whitePlayer.rating : gameMetadata?.blackPlayer.rating}
+                                    {color === "w" ? gameMetadata?.whitePlayer?.rating : gameMetadata?.blackPlayer?.rating}
                                 </div>
                                 
                             </div>          
@@ -233,13 +237,17 @@ export const Game = () => {
                             }
                         </div>
                         <div className="mt-10 flex justify-center">
-                            {!started && gameId === "random" && <Button onClick={() => {
+                            {!initiated && gameId === "random" && <Button onClick={() => {
                                 socket.send(JSON.stringify({
                                     type: INIT_GAME 
                                 }))
+                                setInitiated(true);
                             }} >
                                 Play Online
                             </Button>}
+                        </div>
+                        <div className="flex justify-center text-white">
+                            {initiated && <div> Connecting... </div>}
                         </div>
                     </div>
                 </div>

@@ -51,6 +51,9 @@ export class Game{
 
     async updateSecondPlayer(player2UserId: string) {
         this.player2UserId = player2UserId;
+        if(player2UserId === this.player1UserId){
+            return;
+        }
         const users = await db.user.findMany({
             where: {
                 id: {
@@ -114,6 +117,7 @@ export class Game{
     async addMoveToDb(move: {
         from: string;
         to: string;
+        promotion?: string;
     }) {
 
         await db.$transaction([
@@ -123,6 +127,7 @@ export class Game{
                     moveNumber: this.moveCount + 1,
                     from: move.from,
                     to: move.to,
+                    promotion: move.promotion ?? null,
                     startFen: this.board.fen(),
                     endFen: this.board.fen(),
                     createdAt: new Date(Date.now()),
@@ -141,8 +146,12 @@ export class Game{
 
     async makeMove(user: User, move: {
         from: Square,
-        to: Square
+        to: Square,
+        promotion?: string
     }){
+        if(user.userId !== this.player1UserId && user.userId !== this.player2UserId){
+            return;
+        }
         //validations
         //is it the same users move
         //is the move valid
@@ -160,6 +169,26 @@ export class Game{
         }
         const now = Date.now();
         const elapsed = Number(BigInt(now) - cur_game.last_move_at);
+
+        try {
+            if(isPromoting(this.board, move.from, move.to)){
+                this.board.move({
+                    from: move.from,
+                    to: move.to,
+                    promotion: move.promotion ?? 'q',
+                });
+            } else {
+                this.board.move({
+                    from: move.from,
+                    to: move.to,
+                });
+            }
+
+        } catch (error) {
+            console.log(error);
+            
+            return;
+        }
 
         if (this.moveCount%2 === 0) {
             cur_game.white_time -= elapsed;
@@ -215,25 +244,6 @@ export class Game{
             },
         });
 
-        try {
-            if(isPromoting(this.board, move.from, move.to)){
-                this.board.move({
-                    from: move.from,
-                    to: move.to,
-                    promotion: 'q',
-                });
-            } else {
-                this.board.move({
-                    from: move.from,
-                    to: move.to,
-                });
-            }
-
-        } catch (error) {
-            console.log(error);
-            
-            return;
-        }
 
         await this.addMoveToDb(move);
         SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({

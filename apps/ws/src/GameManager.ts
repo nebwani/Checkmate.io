@@ -40,6 +40,7 @@ export class GameManager{
             if(message.type === INIT_GAME){
                 if(this.pendingGameId){
                     //start a game
+                    
                     const game = this.games.find(x => x.gameId === this.pendingGameId);
                     if(!game){
                         console.log("Pending Game not found");
@@ -93,21 +94,16 @@ export class GameManager{
                     return;
                 }
 
-                if(availableGame){
+                if(!availableGame){
                     const game = new Game(gameFromDb?.whitePlayerId!, gameFromDb?.blackPlayerId!);
                     gameFromDb?.moves.forEach((move) => {
-                        if(isPromoting(game.board, move.from as Square, move.to as Square)){
-                            game.board.move({
-                                from: move.from,
-                                to: move.to,
-                                promotion: 'q'
-                            });
-                        } else {
-                            game.board.move({
-                                from: move.from,
-                                to: move.to,
-                            });
-                        }
+                    
+                        game.board.move({
+                            from: move.from,
+                            to: move.to,
+                            ...(move.promotion ? { promotion: move.promotion } : {})
+                        });
+                        
                     });
                     this.games.push(game);  
                 }

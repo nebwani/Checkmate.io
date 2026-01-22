@@ -54,6 +54,7 @@ model Move {
   moveNumber  Int
   from        String
   to          String
+  promotion   String?
   comments    String?
   startFen    String
   endFen      String

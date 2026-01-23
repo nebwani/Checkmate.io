@@ -38,6 +38,7 @@ export class GameManager{
             // not using grpc in order to keep it clean
             const message = JSON.parse(data.toString());
             if(message.type === INIT_GAME){
+                console.log("INIT_GAME received from:", user.userId);
                 if(this.pendingGameId){
                     //start a game
                     

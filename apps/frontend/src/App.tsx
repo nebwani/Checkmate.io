@@ -47,7 +47,7 @@ function AuthApp() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("http://localhost:3000/auth/refresh", {
+    fetch("https://backend-production-c864.up.railway.app/auth/refresh", {
       method: "GET",
       credentials: "include",
     })

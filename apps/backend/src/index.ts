@@ -6,9 +6,11 @@ import { initPassport } from "./passport.js";
 import session from 'express-session';
 import authRoute from "./router/auth.js";
 import dotenv from "dotenv";
+import cookieParser from "cookie-parser";
 import "dotenv/config";
 
 const app = express();
+app.use(cookieParser());
 
 dotenv.config({
   path: new URL("../.env", import.meta.url).pathname,

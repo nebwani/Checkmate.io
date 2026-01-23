@@ -10,23 +10,24 @@ export interface User{
 
 export const userAtom = atom<User | null>({
     key: "user",
-    default: selector({
-        key: "user/default",
-        get: () => {
-            try {
-                const response =  fetch(`${BACKEND_URL}/auth/refresh`, {
-                    method: "GET",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    credentials: "include",
+    // default: selector({
+    //     key: "user/default",
+    //     get: () => {
+    //         try {
+    //             const response =  fetch(`${BACKEND_URL}/auth/refresh`, {
+    //                 method: "GET",
+    //                 headers: {
+    //                     "Content-Type": "application/json",
+    //                 },
+    //                 credentials: "include",
 
-                });
-            } catch (error) {
-                console.log(error);                
-            }
-            return null;
-        }       
-    }),
+    //             });
+    //         } catch (error) {
+    //             console.log(error);                
+    //         }
+    //         return null;
+    //     }       
+    // }),
+    default: null,
     
 });

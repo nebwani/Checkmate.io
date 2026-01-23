@@ -14,30 +14,31 @@ interface User {
   id: string;
 }
 
-router.get("/refresh", async(req: Request, res: Response) => {
-  if (req.user) {
-    const user = req.user as User;
+router.get("/refresh", async (req: Request, res: Response) => {
+  const token = req.cookies?.jwt;
 
-    //Token is issue so it can be shared between HTTP and ws server
-    //TODO: make this temporary and add refresh logic here
-    const userDb = await db.user.findFirst({
-      where: {
-        id: user.id
-      }
+  if (!token) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as { userId: string };
+
+    const user = await db.user.findUnique({
+      where: { id: payload.userId },
     });
 
-    const token = jwt.sign({userId: user.id}, JWT_SECRET);
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
 
     res.json({
-      token,
       id: user.id,
-      name: userDb?.username
+      name: user.name,
+      rating: user.rating,
     });
-  } else {
-    res.status(401).json({
-      success: false,
-      message: "Unauthorized",
-    });
+  } catch {
+    res.status(401).json({ message: "Unauthorized" });
   }
 });
 
@@ -69,10 +70,25 @@ router.get("/google", passport.authenticate('google', { scope: ['profile', 'emai
 
 router.get(
   '/google/callback',
-  passport.authenticate('google', {
-    successRedirect: CLIENT_URL,
-    failureRedirect: '/login/failed',
-  })
+  passport.authenticate("google", { session: true }),
+  async (req: Request, res: Response) => {
+    const user = req.user as { id: string };
+
+    const token = jwt.sign(
+      { userId: user.id },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.cookie("jwt", token, {
+      httpOnly: true,
+      secure: true,           
+      sameSite: "none",      
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.redirect("http://localhost:5173/game/random");
+  }
 );
 
 

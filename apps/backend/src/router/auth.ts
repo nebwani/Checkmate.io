@@ -14,33 +14,29 @@ interface User {
   id: string;
 }
 
-router.get("/refresh", async (req: Request, res: Response) => {
-  const token = req.cookies?.jwt;
+router.get("/refresh", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Pragma", "no-cache");
 
-  if (!token) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
+  if (req.user) {
+    const user = req.user as User;
 
-  try {
-    const payload = jwt.verify(token, JWT_SECRET) as { userId: string };
-
-    const user = await db.user.findUnique({
-      where: { id: payload.userId },
+    const userDb = await db.user.findFirst({
+      where: { id: user.id }
     });
 
-    if (!user) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET);
 
-    res.json({
+    return res.status(200).json({
+      token,
       id: user.id,
-      name: user.name,
-      rating: user.rating,
+      name: userDb?.name,
     });
-  } catch {
-    res.status(401).json({ message: "Unauthorized" });
   }
+
+  return res.status(401).json({ message: "Unauthorized" });
 });
+
 
 
 

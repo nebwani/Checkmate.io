@@ -16,16 +16,25 @@ dotenv.config({
   path: new URL("../.env", import.meta.url).pathname,
 });
 
+app.set("trust proxy", 1);
+
 app.use(session({
-  secret: 'keyboard-cat',
+  name: "session",
+  secret: process.env.SESSION_SECRET || "keyboard-cat",
   resave: false,
   saveUninitialized: false,
-  cookie: {secure: false, maxAge: 360000}
+  cookie: {
+    httpOnly: true,
+    secure: true,          
+    sameSite: "none",     
+    maxAge: 24 * 60 * 60 * 1000,
+  }
 }));
+
 
 initPassport();
 app.use(passport.initialize());
-app.use(passport.authenticate('session'));
+app.use(passport.session());
 
 app.use(
   cors({

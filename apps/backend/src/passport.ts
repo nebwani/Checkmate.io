@@ -25,7 +25,7 @@ export function initPassport(){
       {
         clientID: GOOGLE_CLIENT_ID,
         clientSecret: GOOGLE_CLIENT_SECRET,
-        callbackURL: "http://localhost:3000/auth/google/callback", 
+        callbackURL: "https://backend-production-c864.up.railway.app/auth/google/callback", 
       },
 
       async function (accessToken: string, refreshToken: string, profile: any, done: (error: any, user?: any) => void) {

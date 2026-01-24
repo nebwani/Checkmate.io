@@ -50,9 +50,7 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
     spectatorMode: boolean;
 }) => {
     const [from, setFrom] = useState<null | Square>(null);
-    const [to, setTo] = useState<null | Square>(null);
     const [isActive, setIsActive] = useState<boolean>(false);
-    const isMyTurn = playColor === chess.turn();
     const [legalMoves, setLegalMoves] = useState<Move[]>([]);
     const [promotion, setPromotion] = useState<{from: Square; to: Square;} | null>(null);
     const isBlack = playColor === "b";
@@ -162,7 +160,6 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                             }
                             
                             setBoard(chess.board());
-                            setTo(null);
                         }
                         
                     }} key={cellIndex} className={`w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 ${(rowIndex + cellIndex) %2 ===0 ? "bg-[#fdcf9e]" : "bg-[#c4864a]"} flex justify-center items-center` + (isActive && from === squareRepresentation ? " border-2 border-red-500 bg-red-200 " : "") + ((lastMove?.from === squareRepresentation || lastMove?.to === squareRepresentation)  ? " bg-red-900" :  "")}>

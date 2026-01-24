@@ -11,7 +11,7 @@ export const MovesTable = ({
     <div className="bg-slate-900 text-white rounded-lg p-3 h-96 overflow-y-auto">
         <div className="space-y-1 text-sm font-mono">
             {
-                sanMoves.map((san, i) => {
+                sanMoves.map((_, i) => {
                     if(i%2 !== 0) return null;
 
                     const white = sanMoves[i];

@@ -1,10 +1,9 @@
-import { use, useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "../components/Button"
 import { ChessBoard, isPromoting } from "../components/ChessBoard"
 import { useSocket } from "../hooks/useSocket"
-import { Chess, Move, type Square } from "chess.js";
+import { Chess, Move } from "chess.js";
 import { useNavigate, useParams } from "react-router-dom";
-import type { User } from "../store/src/atoms/user";
 import { useUser } from "../store/src/hooks/useUser";
 import { MovesTable } from "../components/MovesTable"
 
@@ -48,7 +47,7 @@ export const Game = () => {
     const user = useUser();
 
     const navigate = useNavigate();
-    const [chess, setChess] = useState(new Chess());
+    const [chess] = useState(new Chess());
     const [board, setBoard] = useState(chess.board());
     const [started, setStarted] = useState(false);
     const [initiated, setInitiated] = useState(false);
@@ -86,6 +85,7 @@ export const Game = () => {
                     setStarted(true);
                     setWhiteTime(10*60*1000);
                     setBlackTime(10*60*1000);
+                    // setInitiated(false);
                     navigate(`/game/${message.payload.gameId}`)
                     setGameMetadata({
                         blackPlayer: message.payload.blackPlayer,
@@ -139,7 +139,7 @@ export const Game = () => {
                     })
                     setStarted(true);
                     setMoves(message.payload.moves);
-                    message.payload.moves.map(x => {
+                    message.payload.moves.map((x: Move) => {
                         // if(isPromoting(chess, x.from, x.to)){
                         //     chess.move({...x, promotion: 'q'})
                         // } else {

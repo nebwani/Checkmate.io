@@ -1,4 +1,4 @@
-import {atom, selector} from "recoil";
+import {atom} from "recoil";
 
 export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 

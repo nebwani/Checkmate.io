@@ -10,7 +10,12 @@ export const useSocket = () => {
     useEffect(() => {
         const ws = new WebSocket(`${WS_URL}?token=${user?.token}`); 
         ws.onopen = () => {
+            console.log("WS connected");
             setSocket(ws);
+        }
+        ws.onerror = (e) => {
+            console.log(e);
+            
         }
         ws.onclose = () => {
             setSocket(null)

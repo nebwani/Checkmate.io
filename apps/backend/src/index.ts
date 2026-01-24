@@ -38,7 +38,7 @@ app.use(passport.session());
 
 app.use(
   cors({
-    origin: "https://checkmate-io-frontend.vercel.app/",
+    origin: "https://checkmate-io-frontend.vercel.app",
     methods: "GET,POST,PUT,DELETE",
     credentials: true,
   })

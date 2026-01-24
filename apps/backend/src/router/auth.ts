@@ -55,7 +55,7 @@ router.get("/logout", (req: Request, res: Response) => {
       res.status(500).json({error : 'Failed to log out'});
     } else {
       res.clearCookie('jwt');
-      res.redirect("https://checkmate-io-frontend.vercel.app/");
+      res.redirect("https://checkmate-io-frontend.vercel.app");
     }
   });
 });

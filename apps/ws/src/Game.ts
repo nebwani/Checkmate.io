@@ -235,6 +235,10 @@ export class Game{
             })
             return;
         }
+
+        const t0 = Date.now()
+
+
         await db.game.update({
             where: { id: this.gameId },
             data: {
@@ -244,8 +248,14 @@ export class Game{
             },
         });
 
+        const t1 = Date.now()
+        console.log("move logic:", t1 - t0)
+
 
         await this.addMoveToDb(move);
+
+        const t2 = Date.now()
+        console.log("db:", t2 - t1)
         SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
             type: MOVE,
             payload: {

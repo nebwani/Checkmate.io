@@ -54,7 +54,7 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
     const [legalMoves, setLegalMoves] = useState<Move[]>([]);
     const [promotion, setPromotion] = useState<{from: Square; to: Square;} | null>(null);
     const isBlack = playColor === "b";
-    const audio = new Audio("/MoveSound.mp3");
+
 
     function handlePromotionSelect(piece: PieceSymbol) {
         if(!promotion) return;
@@ -135,7 +135,6 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                                         }
                                     }
                                 }))
-                                audio.play();
 
                                 setFrom(null);
                                 setLegalMoves([]);

@@ -58,6 +58,7 @@ export const Game = () => {
     const [whiteTime, setWhiteTime] = useState(0);
     const [blackTime, setBlackTime] = useState(0);
     const sanMoves = generateSanMoves(moves);
+    const audio = new Audio("/MoveSound.mp3");
 
     useEffect(() => {
     const interval = setInterval(() => {
@@ -112,6 +113,7 @@ export const Game = () => {
                     } else {
                         chess.move({from: move.from, to: move.to});
                     }
+                    audio.play();
                     setBoard(chess.board());
                         
                     

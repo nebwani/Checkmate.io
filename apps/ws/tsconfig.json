@@ -33,6 +33,9 @@
     // "noPropertyAccessFromIndexSignature": true,
 
     // Recommended Options
+    "moduleResolution": "NodeNext",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "strict": true,
     "jsx": "react-jsx",
     "verbatimModuleSyntax": true,

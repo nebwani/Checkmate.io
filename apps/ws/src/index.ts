@@ -3,8 +3,10 @@ import { GameManager } from './GameManager.js';
 import url from "url";
 import { extractUserId } from './auth/index.js';
 import { User } from './SocketManager.js';
+import { getRedis } from './redis.js';
 
 const wss = new WebSocketServer({ port: 8080 });
+getRedis()
 
 const gameManager = new GameManager();
 

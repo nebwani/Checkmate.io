@@ -5,6 +5,7 @@ import{db} from "@repo/db"
 import { randomUUID } from "crypto"
 import { SocketManager, type User } from "./SocketManager.js"
 import { calculateElo } from "./elo.js";
+import { getRedis } from "./redis.js";
 
 export function isPromoting(chess: Chess, from: Square, to: Square){
         if(!from){
@@ -68,6 +69,16 @@ export class Game{
             console.log(error);
             return;
         }
+
+        const redis = getRedis();
+
+        await redis.hset(`game:${this.gameId}`, {
+            whiteTime: 10 * 60 * 1000,
+            blackTime: 10 * 60 * 1000,
+            lastMoveAt: Date.now(),
+            moveCount: 0,
+            fen: this.board.fen(),
+        });
 
         SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
         type: INIT_GAME,
@@ -161,14 +172,26 @@ export class Game{
         // if(this.moveCount %2 ===1 && user.userId !== this.player2UserId){
         //     return ;
         // }
-        const cur_game = await db.game.findUnique({
-            where: {id: this.gameId}
-        });
-        if(!cur_game) {
-            return;
+        const redis = getRedis();
+
+        const state = await redis.hgetall(`game:${this.gameId}`);
+
+        if (!state || !state.lastMoveAt) {
+        console.log("Redis game state missing");
+        return;
         }
+
+        let whiteTime = Number(state.whiteTime);
+        let blackTime = Number(state.blackTime);
+        let lastMoveAt = Number(state.lastMoveAt);
+        let moveCount = Number(state.moveCount);
+        this.moveCount = moveCount;
+
         const now = Date.now();
-        const elapsed = Number(BigInt(now) - cur_game.last_move_at);
+        const elapsed = now - lastMoveAt;
+
+        
+
 
         try {
             if(isPromoting(this.board, move.from, move.to)){
@@ -190,13 +213,22 @@ export class Game{
             return;
         }
 
-        if (this.moveCount%2 === 0) {
-            cur_game.white_time -= elapsed;
+        if (moveCount % 2 === 0) {
+        whiteTime -= elapsed;
         } else {
-            cur_game.black_time -= elapsed;
+        blackTime -= elapsed;
         }
 
-        if (cur_game.white_time <= 0) {
+        await redis.hset(`game:${this.gameId}`, {
+            whiteTime,
+            blackTime,
+            lastMoveAt: now,
+            moveCount: moveCount + 1,
+            fen: this.board.fen(),
+        });
+
+
+        if (whiteTime <= 0) {
             SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
                 type: GAME_OVER,
                 payload: {
@@ -216,7 +248,7 @@ export class Game{
             return;
         }
 
-        if (cur_game.black_time <= 0) {
+        if (blackTime <= 0) {
             SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
                 type: GAME_OVER,
                 payload: {
@@ -239,20 +271,22 @@ export class Game{
         const t0 = Date.now()
 
 
-        await db.game.update({
+        db.game.update({
             where: { id: this.gameId },
             data: {
-                white_time: cur_game.white_time,
-                black_time: cur_game.black_time,
+                white_time: whiteTime,
+                black_time: blackTime,
                 last_move_at: now,
             },
-        });
+        }).catch(err => console.error("DB clock update failed:", err));
 
         const t1 = Date.now()
         console.log("move logic:", t1 - t0)
 
 
-        await this.addMoveToDb(move);
+        this.addMoveToDb(move).catch(err =>
+        console.error("DB move write failed:", err)
+        );
 
         const t2 = Date.now()
         console.log("db:", t2 - t1)
@@ -260,8 +294,8 @@ export class Game{
             type: MOVE,
             payload: {
                 move,
-                whiteTime: cur_game.white_time,
-                blackTime: cur_game.black_time,
+                whiteTime: whiteTime,
+                blackTime: blackTime,
             }
         }))
 

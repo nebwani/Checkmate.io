@@ -16,7 +16,11 @@ dotenv.config({
   path: new URL("../.env", import.meta.url).pathname,
 });
 
-app.set("trust proxy", 1);
+const isProd = process.env.CLIENT_URL !== "http://localhost:5173";
+
+if (isProd) {
+  app.set("trust proxy", 1);
+}
 
 app.use(session({
   name: "session",
@@ -25,8 +29,8 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
-    secure: true,          
-    sameSite: "none",     
+    secure: isProd,          
+    sameSite: isProd ? "none" : "lax",     
     maxAge: 24 * 60 * 60 * 1000,
   }
 }));

@@ -1,6 +1,9 @@
 import { Redis } from "ioredis";
 
 let redisClient: Redis | undefined;
+import 'dotenv/config';
+// or
+require('dotenv').config();
 
 export function getRedis(): Redis {
   if (!redisClient) {

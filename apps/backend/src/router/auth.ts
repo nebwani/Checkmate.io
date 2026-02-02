@@ -9,6 +9,7 @@ const router = Router();
 
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 const JWT_SECRET = process.env.JWT_SECRET || 'chess_super_secret';
+const isProd = process.env.CLIENT_URL !== "http://localhost:5173";
 
 interface User {
   id: string;
@@ -78,8 +79,8 @@ router.get(
 
     res.cookie("jwt", token, {
       httpOnly: true,
-      secure: true,           
-      sameSite: "none",      
+      secure: isProd,           
+      sameSite: isProd ? "none" : "lax",      
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 

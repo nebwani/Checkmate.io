@@ -59,6 +59,7 @@ export const Game = () => {
     const [blackTime, setBlackTime] = useState(0);
     const sanMoves = generateSanMoves(moves);
     const audio = new Audio("/MoveSound.mp3");
+    
 
     useEffect(() => {
     const interval = setInterval(() => {
@@ -93,32 +94,34 @@ export const Game = () => {
                         whitePlayer: message.payload.whitePlayer,
                     })
                     setColor(user?.id === message.payload.blackPlayer.id ? "b" : "w");
-                    console.log(color);
                     break;
                 case MOVE:
                     const move = message.payload.move;
                     console.log(message.payload);
-                    
                     // const moves = chess.moves({verbose: true});
                     // if(moves.map(x => JSON.stringify(x)).includes(JSON.stringify(move)))return;
                     // const { from, to } = move;
+                    
+                    if (
+                       (user?.id === gameMetadata?.whitePlayer.id && moves.length%2 === 0) ||  (user?.id === gameMetadata?.blackPlayer.id && moves.length%2 === 1)
+                    ) {
+                        // just sync clocks
+                        setMoves(m => [...m, move]);
+                        setWhiteTime(message.payload.whiteTime);
+                        setBlackTime(message.payload.blackTime);
+                        break;
+                    }
+
+                    // opponent move → apply
+                    setMoves(m => [...m, move]);
+                    chess.move(move);
+                    setBoard(chess.board());
+                    audio.play();
+
                     setWhiteTime(message.payload.whiteTime);
                     setBlackTime(message.payload.blackTime);
-                    if(isPromoting(chess, move.from, move.to)){
-                        chess.move({
-                            from: move.from,
-                            to: move.to,
-                            promotion: move.promotion // may be undefined → chess.js handles it
-                        });
-                    } else {
-                        chess.move({from: move.from, to: move.to});
-                    }
-                    audio.play();
-                    setBoard(chess.board());
-                        
-                    
-                    setMoves(moves => [...moves, move]);
 
+                    
 
                     // setMoveCount(chess.history().length);
                     break;
@@ -249,7 +252,7 @@ export const Game = () => {
                             </Button>}
                         </div>
                         <div className="flex justify-center text-white">
-                            {initiated && <div> Connecting... </div>}
+                            {initiated && !started && <div> Connecting... </div>}
                         </div>
                     </div>
                 </div>

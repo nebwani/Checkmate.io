@@ -59,6 +59,15 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
     function handlePromotionSelect(piece: PieceSymbol) {
         if(!promotion) return;
 
+        chess.move({
+            from: promotion.from,
+            to: promotion.to,
+            promotion: piece
+        });
+        setBoard(chess.board());
+
+        new Audio("/MoveSound.mp3").play();
+
         socket.send(JSON.stringify({
             type: MOVE,
             payload: {
@@ -124,6 +133,12 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                                     setPromotion({ from, to: squareRepresentation });
                                     return;
                                 }
+
+                                chess.move({ from, to: squareRepresentation });
+                                setBoard(chess.board());
+
+                                new Audio("/MoveSound.mp3").play();
+
     
                                 socket.send(JSON.stringify({
                                     type: MOVE,

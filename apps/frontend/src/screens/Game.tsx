@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Button } from "../components/Button"
-import { ChessBoard, isPromoting } from "../components/ChessBoard"
+import { ChessBoard} from "../components/ChessBoard"
 import { useSocket } from "../hooks/useSocket"
 import { Chess, Move } from "chess.js";
 import { useNavigate, useParams } from "react-router-dom";

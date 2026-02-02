@@ -7,7 +7,7 @@ import {db} from "@repo/db"
 
 const router = Router();
 
-const CLIENT_URL = "https://checkmate-io-frontend.vercel.app/game/random";
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 const JWT_SECRET = process.env.JWT_SECRET || 'chess_super_secret';
 
 interface User {
@@ -55,7 +55,7 @@ router.get("/logout", (req: Request, res: Response) => {
       res.status(500).json({error : 'Failed to log out'});
     } else {
       res.clearCookie('jwt');
-      res.redirect("https://checkmate-io-frontend.vercel.app");
+      res.redirect(CLIENT_URL);
     }
   });
 });
@@ -83,7 +83,7 @@ router.get(
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    res.redirect("https://checkmate-io-frontend.vercel.app/game/random");
+    res.redirect(`${CLIENT_URL}/game/random`);
   }
 );
 

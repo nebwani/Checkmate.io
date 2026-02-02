@@ -47,7 +47,7 @@ function AuthApp() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("https://backend-production-c864.up.railway.app/auth/refresh", {
+    fetch(`${import.meta.env.VITE_BACKEND_URL}/auth/refresh`, {
       method: "GET",
       credentials: "include",
     })

@@ -15,6 +15,7 @@ const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
 const FACEBOOK_APP_ID = process.env.FACEBOOK_APP_ID;
 const FACEBOOK_APP_SECRET = process.env.FACEBOOK_APP_SECRET;
+const BACKEND_URL = process.env.BACKEND_URL;
 
 export function initPassport(){
   if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET || !FACEBOOK_APP_ID || !FACEBOOK_APP_SECRET) {
@@ -25,7 +26,7 @@ export function initPassport(){
       {
         clientID: GOOGLE_CLIENT_ID,
         clientSecret: GOOGLE_CLIENT_SECRET,
-        callbackURL: "https://backend-production-c864.up.railway.app/auth/google/callback", 
+        callbackURL: `${BACKEND_URL}/auth/google/callback`, 
       },
 
       async function (accessToken: string, refreshToken: string, profile: any, done: (error: any, user?: any) => void) {

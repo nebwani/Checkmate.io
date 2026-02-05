@@ -197,7 +197,7 @@ export const Game = () => {
                                 
                             </div>
                             <div className="ml-auto px-2">
-                                <div className="w-20 h-10 border text-white text-xl border-white flex items-center justify-center rounded">
+                                <div className={`w-20 h-10 border text-white text-xl flex items-center justify-center rounded ${chess.turn() !== color ? " border-3 border-red-500" : ""}`}>
                                     {color === "w" ? formatTime(blackTime) : formatTime(whiteTime)}
                                 </div>
                                 
@@ -218,7 +218,7 @@ export const Game = () => {
                                 
                             </div>          
                             <div className="ml-auto px-2">
-                                <div className="w-20 h-10 border text-white text-xl border-white flex items-center justify-center rounded">
+                                <div className={`w-20 h-10 border text-white text-xl flex items-center justify-center rounded ${chess.turn() === color ? " border-2 border-red-500" : ""}`}>
                                     {color === "w" ? formatTime(whiteTime) : formatTime(blackTime)}
                                 </div>
                                 

@@ -1,4 +1,4 @@
-import { Chess, Move, type Color, type PieceSymbol, type Square } from "chess.js";
+import { Chess, Move, SQUARES, type Color, type PieceSymbol, type Square } from "chess.js";
 import { useState } from "react";
 import { MOVE } from "../screens/Game.tsx";
 import PromotionModal from "./PromotionModal.tsx";
@@ -53,6 +53,7 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
     const [isActive, setIsActive] = useState<boolean>(false);
     const [legalMoves, setLegalMoves] = useState<Move[]>([]);
     const [promotion, setPromotion] = useState<{from: Square; to: Square;} | null>(null);
+    const [dragFrom, setDragFrom] = useState<Square | null>(null);
     const isBlack = playColor === "b";
 
 
@@ -102,6 +103,7 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                     const squareRepresentation = `${file}${rank}` as Square;
                     // const squareRepresentation = String.fromCharCode(97 + (cellIndex % 8)) + "" + (8 - rowIndex) as Square
                     return <div onClick={() => {
+                        
                         
                         if(spectatorMode){
                             return;
@@ -175,21 +177,88 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                             
                             setBoard(chess.board());
                         }
+
                         
+                        
+                    }} 
+
+                    onDragOver={(e) => {
+                    if (!dragFrom) return;
+                    if (legalMoves.some(m => m.to === squareRepresentation)) {
+                        e.preventDefault();
+                    }
+                    }}
+
+                    onDrop={(e) => {
+                    e.preventDefault();
+                    if (!dragFrom) return;
+
+                    if (!legalMoves.some(m => m.to === squareRepresentation)) return;
+
+                    if (isPromoting(chess, dragFrom, squareRepresentation)) {
+                        setPromotion({ from: dragFrom, to: squareRepresentation });
+                        return;
+                    }
+
+                    chess.move({ from: dragFrom, to: squareRepresentation });
+                    setBoard(chess.board());
+                    new Audio("/MoveSound.mp3").play();
+
+                    socket.send(JSON.stringify({
+                        type: MOVE,
+                        payload: {
+                        gameId,
+                        move: {
+                            from: dragFrom,
+                            to: squareRepresentation
+                        }
+                        }
+                    }));
+
+                        setDragFrom(null);
+                        setFrom(null);
+                        setLegalMoves([]);
+                        setIsActive(false);
+
                     }} key={cellIndex} className={`w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 ${(rowIndex + cellIndex) %2 ===0 ? "bg-[#fdcf9e]" : "bg-[#c4864a]"} flex justify-center items-center` + (isActive && from === squareRepresentation ? " border-2 border-red-500 bg-red-200 " : "") + ((lastMove?.from === squareRepresentation || lastMove?.to === squareRepresentation)  ? " bg-red-900" :  "")}>
                         <div className="w-full justify-center flex h-full">
                             <div className="h-full justify-center flex items-center">
-                                {
-                                    cell ? <img className="w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16" src={`/${cell?.color === "b" ? cell?.type : `${cell?.type?.toUpperCase()} Copy`}.png`}/> : null
+                                {cell && (
+                                <img
+                                    draggable={!spectatorMode && cell.color === chess.turn() && playColor === (chess.turn() === 'w' ? "w" : "b")}
                                     
-                                }
+                                    onDragStart={(e) => {
+                                        if (spectatorMode) return;
+                                        if (cell.color !== chess.turn()) return;
+
+                                        setDragFrom(squareRepresentation);
+                                        setFrom(squareRepresentation);
+
+                                        const moves = chess.moves({
+                                            square: squareRepresentation,
+                                            verbose: true
+                                        }) as Move[];
+
+                                        setLegalMoves(moves);
+                                        e.dataTransfer.setData("text/plain", squareRepresentation);
+                                    }}
+                                    onDragEnd={() => {
+                                        
+                                        setDragFrom(null);
+                                        setFrom(null);
+                                        setLegalMoves([]);
+                                    }}
+                                    className="w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 cursor-grab active:cursor-grabbing"
+                                    src={`/${cell.color === "b" ? cell.type : `${cell.type.toUpperCase()} Copy`}.png`}
+                                />
+                                )}
 
                                 {
-                                    ((!isBlack && rowIndex === 7) || (isBlack && rowIndex === 0)) ? <div className="absolute w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 z-100 flex items-end justify-end"><div className="absolute w-5 h-5 z-50 text-right items-end text-[15px] font-mono font-extrabold">{squareRepresentation[0]}</div></div> : null
+                                    ((!isBlack && rowIndex === 7) || (isBlack && rowIndex === 7)) ? <div className="absolute w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 z-100 flex items-end justify-end pointer-events-none"><div className="absolute w-3 h-3 md:w-5 md:h-5 z-50 text-right items-end text-[10px] md:text-[15px] font-mono font-extrabold pointer-events-none">{squareRepresentation[0]}</div></div> : null
                                     
                                 }
                                 {
-                                    ((!isBlack && cellIndex === 0) || (isBlack && cellIndex === 7)) ? <div className="absolute w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16     z-100 flex items-top justify-left"><div className="absolute w-5 h-5 z-50 text-left text-[15px] font-mono font-extrabold">{squareRepresentation[1]}</div></div> : null
+                                    ((!isBlack && cellIndex === 0) || (isBlack && cellIndex === 0)) ? <div className="absolute w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 z-100 flex items-top justify-left pointer-events-none"><div className="absolute w-2 h-2 md:w-5 md:h-5 z-50 text-left text-[10px] md:text-[15px] font-mono font-extrabold pointer-events-none">{squareRepresentation[1]}</div></div> : null
                                 }
                                 
                                 {legalMoves.some(m => m.to === squareRepresentation) && ( <div className=" h-4 w-4 rounded-full bg-black/30 pointer-events-none z+10 flex" /> )}

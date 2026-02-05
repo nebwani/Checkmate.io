@@ -1,4 +1,4 @@
-import { Chess, Move, SQUARES, type Color, type PieceSymbol, type Square } from "chess.js";
+import { Chess, Move, type Color, type PieceSymbol, type Square } from "chess.js";
 import { useState } from "react";
 import { MOVE } from "../screens/Game.tsx";
 import PromotionModal from "./PromotionModal.tsx";

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { Button } from "../components/Button"
 import { ChessBoard} from "../components/ChessBoard"
 import { useSocket } from "../hooks/useSocket"
@@ -6,6 +6,8 @@ import { Chess, Move } from "chess.js";
 import { useNavigate, useParams } from "react-router-dom";
 import { useUser } from "../store/src/hooks/useUser";
 import { MovesTable } from "../components/MovesTable"
+import confetti from "canvas-confetti";
+
 
 export const INIT_GAME = "init_game";
 export const MOVE = "move";
@@ -14,6 +16,9 @@ export const OPPONENT_DISCONNECTED = "opponent_disconnected"
 export const JOIN_ROOM = "join_room";
 export const GAME_NOT_FOUND = "game_not_found";
 export const GAME_JOINED = "game_joined";
+export const OFFER_DRAW = "offer_draw";
+export const ACCEPT_DRAW = "accept_draw";
+export const DECLINE_DRAW = "decline_draw";
 
 
 interface Metadata {
@@ -40,6 +45,38 @@ function generateSanMoves(moves: { from: string; to: string; promotion?: string 
   });
 }
 
+function fireConfetti() {
+  const canvas = document.createElement("canvas");
+  canvas.style.position = "fixed";
+  canvas.style.top = "0";
+  canvas.style.left = "0";
+  canvas.style.width = "100vw";
+  canvas.style.height = "100vh";
+  canvas.style.pointerEvents = "none";
+  canvas.style.zIndex = "9999";
+
+    
+  document.body.appendChild(canvas);
+
+  const myConfetti = confetti.create(canvas, {
+    resize: true,
+    useWorker: true,
+  });
+
+  myConfetti({
+    particleCount: 300,
+    spread: 260,
+    startVelocity: 30,
+    origin: { y: 0.5 }
+  });
+
+  setTimeout(() => {
+    document.body.removeChild(canvas);
+  }, 4000);
+}
+
+
+
 export const Game = () => {
 
     const socket = useSocket()
@@ -57,6 +94,8 @@ export const Game = () => {
     const [moves, setMoves] = useState<Move[]>([]);
     const [whiteTime, setWhiteTime] = useState(0);
     const [blackTime, setBlackTime] = useState(0);
+    const [drawOfferedBy, setDrawOfferedBy] = useState<"w" | "b" | null>(null);
+    const confettiPlayedRef = useRef(false);
     const sanMoves = generateSanMoves(moves);
     const audio = new Audio("/MoveSound.mp3");
     
@@ -72,6 +111,25 @@ export const Game = () => {
 
     return () => clearInterval(interval);
     }, [chess.turn()]);
+
+    useEffect(() => {
+        if (!result || !user || !gameMetadata) return;
+        if (confettiPlayedRef.current) return;
+
+        const didWhiteWin =
+            result === "WHITE_WINS" &&
+            user.id === gameMetadata.whitePlayer.id;
+
+        const didBlackWin =
+            result === "BLACK_WINS" &&
+            user.id === gameMetadata.blackPlayer.id;
+
+        if (didWhiteWin || didBlackWin) {
+            confettiPlayedRef.current = true;
+            console.log("CONFETTI FIRED");
+            fireConfetti();
+        }
+    }, [result, user, gameMetadata]);
 
 
     useEffect(() => {
@@ -126,11 +184,23 @@ export const Game = () => {
                     // setMoveCount(chess.history().length);
                     break;
                 case GAME_OVER:
-                    setResult(message.payload.result);
-                    setGameMetadata({
-                        blackPlayer: {id: gameMetadata?.blackPlayer?.id!, name: gameMetadata?.blackPlayer?.name!, rating: message.payload.blackRating},
-                        whitePlayer: {id: gameMetadata?.whitePlayer?.id!, name: gameMetadata?.whitePlayer?.name!, rating: message.payload.whiteRating}
-                    })
+                    const gameResult = message.payload.result;
+                    setDrawOfferedBy(null);
+                    setResult(gameResult);
+                    setGameMetadata(prev => {
+                        if (!prev) return prev;
+
+                        return {
+                        blackPlayer: {
+                            ...prev.blackPlayer,
+                            rating: message.payload.blackRating,
+                        },
+                        whitePlayer: {
+                            ...prev.whitePlayer,
+                            rating: message.payload.whiteRating,
+                        },
+                        };
+                    });
                     break;
             
                 case OPPONENT_DISCONNECTED:
@@ -154,6 +224,17 @@ export const Game = () => {
                         
                     })
                     setBoard(chess.board());
+                    if(message.payload.result){
+                        setResult(message.payload.result);
+                    }
+                    break;
+
+                case OFFER_DRAW:
+                    setDrawOfferedBy(message.payload.from);
+                    break;
+
+                case DECLINE_DRAW:
+                    setDrawOfferedBy(null);
                     break;
                     
             }
@@ -241,6 +322,37 @@ export const Game = () => {
                                 </div>
                             }
                         </div>
+                        <div className="flex justify-center space-x-5">
+                            <div>
+                                {started && !result && (user?.id === gameMetadata?.blackPlayer.id || user?.id === gameMetadata?.whitePlayer.id) && (
+                                <button
+                                    onClick={() => {
+                                    socket.send(JSON.stringify({
+                                        type: "resign",
+                                        payload: { gameId }
+                                    }));
+                                    }}
+                                    className="bg-red-600 hover:bg-red-900 text-white font-bold py-2 px-4 rounded" 
+                                >
+                                    Resign
+                                </button>
+                                )}
+                            </div>
+                            <div>
+                                {started && !result && (user?.id === gameMetadata?.blackPlayer.id || user?.id === gameMetadata?.whitePlayer.id) && !drawOfferedBy && (
+                                <Button
+                                    onClick={() => {
+                                    socket.send(JSON.stringify({
+                                        type: "offer_draw",
+                                        payload: { gameId }
+                                    }));
+                                    }}
+                                >
+                                    Offer Draw
+                                </Button>
+                                )}
+                            </div>
+                        </div>
                         <div className="mt-10 flex justify-center">
                             {!initiated && gameId === "random" && <Button onClick={() => {
                                 socket.send(JSON.stringify({
@@ -250,6 +362,26 @@ export const Game = () => {
                             }} >
                                 Play Online
                             </Button>}
+                        </div>
+                        
+                        <div>
+                            {drawOfferedBy && drawOfferedBy !== color && !result && (
+                            <div className="flex items-center space-x-5">
+                                <Button onClick={() => socket.send(JSON.stringify({
+                                type: "accept_draw",
+                                payload: { gameId }
+                                }))}>
+                                Accept Draw
+                                </Button>
+
+                                <Button onClick={() => socket.send(JSON.stringify({
+                                type: "decline_draw",
+                                payload: { gameId }
+                                }))}>
+                                Decline
+                                </Button>
+                            </div>
+                            )}
                         </div>
                         <div className="flex justify-center text-white">
                             {initiated && !started && <div> Connecting... </div>}

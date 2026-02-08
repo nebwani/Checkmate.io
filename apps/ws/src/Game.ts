@@ -1,6 +1,6 @@
 import { Chess, type Square } from "chess.js";
 import type WebSocket from "ws";
-import { GAME_OVER, INIT_GAME, MOVE } from "./messages.js";
+import { DECLINE_DRAW, GAME_OVER, INIT_GAME, MOVE, OFFER_DRAW } from "./messages.js";
 import{db} from "@repo/db"
 import { randomUUID } from "crypto"
 import { SocketManager, type User } from "./SocketManager.js"
@@ -39,6 +39,7 @@ export class Game{
     public board: Chess
     public moveCount: number; 
     private startTime: Date
+    private pendingDrawOfferFrom: "w" | "b" | null = null;
 
     constructor(player1UserId: string, player2UserId: string | null){
         this.player1UserId = player1UserId;
@@ -49,6 +50,94 @@ export class Game{
         this.gameId = randomUUID();
 
     }
+
+    private getPlayerColor(userId: string): "w" | "b" | null {
+        if (userId === this.player1UserId) return "w";
+        if (userId === this.player2UserId) return "b";
+        return null;
+    }
+
+    async resign(user: User) {
+        const color = this.getPlayerColor(user.userId);
+        if (!color) return;
+
+        const result = color === "w" ? "BLACK_WINS" : "WHITE_WINS";
+
+        const white = await db.user.findUnique({ where: { id: this.player1UserId } });
+        const black = await db.user.findUnique({ where: { id: this.player2UserId! } });
+        if (!white || !black) return;
+
+        const { newWhite, newBlack } = calculateElo(white.rating, black.rating, result);
+
+        SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
+            type: GAME_OVER,
+            payload: {
+                result,
+                reason: "RESIGNATION",
+                whiteRating: newWhite,
+                blackRating: newBlack,
+            }
+        }));
+
+        await db.$transaction([
+            db.user.update({ where: { id: white.id }, data: { rating: newWhite } }),
+            db.user.update({ where: { id: black.id }, data: { rating: newBlack } }),
+            db.game.update({
+                where: { id: this.gameId },
+                data: { status: "COMPLETED", result }
+            })
+        ]);
+    }
+
+    offerDraw(user: User) {
+        const color = this.getPlayerColor(user.userId);
+        if (!color) return;
+
+        if (this.pendingDrawOfferFrom) return; // already pending
+
+        this.pendingDrawOfferFrom = color;
+
+        SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
+            type: OFFER_DRAW,
+            payload: { from: color }
+        }));
+    }
+
+    async acceptDraw(user: User) {
+        const color = this.getPlayerColor(user.userId);
+        if (!color) return;
+
+        if (!this.pendingDrawOfferFrom || this.pendingDrawOfferFrom === color) return;
+
+        this.pendingDrawOfferFrom = null;
+
+        SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
+            type: GAME_OVER,
+            payload: {
+                result: "DRAW",
+                reason: "AGREED_DRAW"
+            }
+        }));
+
+        await db.game.update({
+            where: { id: this.gameId },
+            data: { status: "COMPLETED", result: "DRAW" }
+        });
+    }
+
+    declineDraw(user: User) {
+        const color = this.getPlayerColor(user.userId);
+        if (!color) return;
+
+        if (this.pendingDrawOfferFrom !== color) {
+            this.pendingDrawOfferFrom = null;
+            SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
+                type: DECLINE_DRAW
+            }));
+        }
+    }
+
+
 
     async updateSecondPlayer(player2UserId: string) {
         this.player2UserId = player2UserId;
@@ -186,6 +275,8 @@ export class Game{
         let lastMoveAt = Number(state.lastMoveAt);
         let moveCount = Number(state.moveCount);
         this.moveCount = moveCount;
+        this.pendingDrawOfferFrom = null;
+
 
         const now = Date.now();
         const elapsed = now - lastMoveAt;
@@ -232,7 +323,7 @@ export class Game{
             SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
                 type: GAME_OVER,
                 payload: {
-                    result: "BLACK_WINS_ON_TIME"
+                    result: "BLACK_WINS"
                 }
             }))
             await db.game.update({
@@ -252,7 +343,7 @@ export class Game{
             SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
                 type: GAME_OVER,
                 payload: {
-                    result: "WHITE_WINS_ON_TIME"
+                    result: "WHITE_WINS"
                 }
             }))
             await db.game.update({
@@ -318,6 +409,7 @@ export class Game{
                 type: GAME_OVER,
                 payload: {
                     result,
+                    reason: "GAME OVER",
                     whiteRating: newWhite,
                     blackRating: newBlack
                 }

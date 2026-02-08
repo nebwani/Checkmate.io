@@ -1,5 +1,5 @@
 import { WebSocket } from "ws";
-import { INIT_GAME, JOIN_GAME, MOVE, OPPONENT_DISCONNECTED, JOIN_ROOM, GAME_NOT_FOUND, GAME_JOINED } from "./messages.js";
+import { INIT_GAME, JOIN_GAME, MOVE, OPPONENT_DISCONNECTED, JOIN_ROOM, GAME_NOT_FOUND, GAME_JOINED, RESIGN, OFFER_DRAW, ACCEPT_DRAW, DECLINE_DRAW } from "./messages.js";
 import { Game, isPromoting } from "./Game.js";
 // import { Move } from "chess.js";
 
@@ -123,7 +123,8 @@ export class GameManager{
                             id: gameFromDb.whitePlayer.id,
                             name: gameFromDb.whitePlayer.name,
                             rating: gameFromDb.whitePlayer.rating
-                        }
+                        },
+                        result: gameFromDb.result
                     }
                 }));    
 
@@ -131,6 +132,26 @@ export class GameManager{
 
 
 
+            }
+
+            if (message.type === RESIGN) {
+                const game = this.games.find(g => g.gameId === message.payload.gameId);
+                if (game) await game.resign(user);
+            }
+
+            if (message.type === OFFER_DRAW) {
+                const game = this.games.find(g => g.gameId === message.payload.gameId);
+                if (game) game.offerDraw(user);
+            }
+
+            if (message.type === ACCEPT_DRAW) {
+                const game = this.games.find(g => g.gameId === message.payload.gameId);
+                if (game) await game.acceptDraw(user);
+            }
+
+            if (message.type === DECLINE_DRAW) {
+                const game = this.games.find(g => g.gameId === message.payload.gameId);
+                if (game) game.declineDraw(user);
             }
         })
     }

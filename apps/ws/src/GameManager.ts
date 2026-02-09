@@ -1,21 +1,21 @@
 import { WebSocket } from "ws";
 import { INIT_GAME, JOIN_GAME, MOVE, OPPONENT_DISCONNECTED, JOIN_ROOM, GAME_NOT_FOUND, GAME_JOINED, RESIGN, OFFER_DRAW, ACCEPT_DRAW, DECLINE_DRAW } from "./messages.js";
-import { Game, isPromoting } from "./Game.js";
+import { Game } from "./Game.js";
 // import { Move } from "chess.js";
 
 import { db } from "@repo/db";
 import { SocketManager, User } from "./SocketManager.js";
-import type { Square } from "chess.js";
+import {TimeControl} from "@prisma/client"
+
 
 
 export class GameManager{
     private games: Game[];
-    private pendingGameId: string  | null;
+    private pendingGames: Partial<Record<TimeControl, string | undefined>> = {};
     private users: User[];
     
     constructor(){
         this.games = []
-        this.pendingGameId = null;
         this.users = []
     }
     addUser(user: User){
@@ -38,23 +38,28 @@ export class GameManager{
             // not using grpc in order to keep it clean
             const message = JSON.parse(data.toString());
             if(message.type === INIT_GAME){
+                const timeControl: TimeControl = message.payload.mode;
                 console.log("INIT_GAME received from:", user.userId);
-                if(this.pendingGameId){
+                const pendingGameId = this.pendingGames[timeControl];
+                if(pendingGameId){
                     //start a game
                     
-                    const game = this.games.find(x => x.gameId === this.pendingGameId);
+                    const game = this.games.find(x => x.gameId === pendingGameId);
                     if(!game){
                         console.log("Pending Game not found");
+                        this.pendingGames[timeControl] = undefined;
                         return;                    
                     }
                     SocketManager.getInstance().addUser(user, game.gameId);
                     await game?.updateSecondPlayer(user.userId);            
-                    this.pendingGameId = null;
+                    this.pendingGames[timeControl] = undefined;
                 }
                 else {
-                    const game = new Game(user.userId, null);
+                    const game = new Game(user.userId, null, timeControl);
+                    console.log(timeControl);
+                    
                     this.games.push(game);
-                    this.pendingGameId = game.gameId;
+                    this.pendingGames[timeControl] = game.gameId;
                     SocketManager.getInstance().addUser(user, game.gameId);
                 }
             }
@@ -96,7 +101,7 @@ export class GameManager{
                 }
 
                 if(!availableGame){
-                    const game = new Game(gameFromDb?.whitePlayerId!, gameFromDb?.blackPlayerId!);
+                    const game = new Game(gameFromDb?.whitePlayerId!, gameFromDb?.blackPlayerId!, gameFromDb.timeControl);
                     gameFromDb?.moves.forEach((move) => {
                     
                         game.board.move({

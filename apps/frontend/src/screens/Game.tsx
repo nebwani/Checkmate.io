@@ -102,6 +102,9 @@ export const Game = () => {
 
     useEffect(() => {
     const interval = setInterval(() => {
+        if(result){
+            return;
+        }
         if (chess.turn() === "w") {
         setWhiteTime(t => Math.max(0, t - 100));
         } else {
@@ -253,11 +256,19 @@ export const Game = () => {
 
 
     if (!socket) return <div>Connecting...</div>
+
+    function startGame(mode: "CLASSICAL" | "RAPID" | "BLITZ" | "BULLET") {
+        socket?.send(JSON.stringify({
+            type: INIT_GAME,
+            payload: { mode }
+        }));
+        setInitiated(true);
+    }
     
 
     return <div>
         <div className="flex justify-center text-white pt-4">
-            {gameMetadata?.whitePlayer?.name} vs {gameMetadata?.blackPlayer?.name}
+            {gameMetadata?.whitePlayer?.name} {started && <p>vs</p>} {gameMetadata?.blackPlayer?.name}
         </div>
         {result && <div className="flex justify-center text-white mt-4">
             {result}
@@ -278,7 +289,7 @@ export const Game = () => {
                                 
                             </div>
                             <div className="ml-auto px-2">
-                                <div className={`w-20 h-10 border text-white text-xl flex items-center justify-center rounded ${chess.turn() !== color ? " border-3 border-red-500" : ""}`}>
+                                <div className={`w-20 h-10 border text-white text-xl flex items-center justify-center rounded ${chess.turn() !== color && started? " border-3 border-red-500" : ""}`}>
                                     {color === "w" ? formatTime(blackTime) : formatTime(whiteTime)}
                                 </div>
                                 
@@ -299,7 +310,7 @@ export const Game = () => {
                                 
                             </div>          
                             <div className="ml-auto px-2">
-                                <div className={`w-20 h-10 border text-white text-xl flex items-center justify-center rounded ${chess.turn() === color ? " border-2 border-red-500" : ""}`}>
+                                <div className={`w-20 h-10 border text-white text-xl flex items-center justify-center rounded ${chess.turn() === color && started ? " border-2 border-red-500" : ""}`}>
                                     {color === "w" ? formatTime(whiteTime) : formatTime(blackTime)}
                                 </div>
                                 
@@ -353,15 +364,24 @@ export const Game = () => {
                                 )}
                             </div>
                         </div>
-                        <div className="mt-10 flex justify-center">
-                            {!initiated && gameId === "random" && <Button onClick={() => {
-                                socket.send(JSON.stringify({
-                                    type: INIT_GAME 
-                                }))
-                                setInitiated(true);
-                            }} >
-                                Play Online
-                            </Button>}
+                        {
+                            !initiated && gameId === "random" && 
+                            <div className="text-2xl text-white mt-5 text-center font-bold">
+                                Select Game Mode
+                            </div>
+                        }
+                        <div className="mt-5 flex justify-center">
+                            {!initiated && gameId === "random" && 
+                            <div className="flex flex-col space-y-4 justify-center">
+                                <div className="flex flex-col space-y-4">
+                                    <Button onClick={() => startGame("CLASSICAL")}>Classical</Button>
+                                    <Button onClick={() => startGame("RAPID")}>Rapid</Button>
+                                </div>
+                                <div className="flex flex-col space-y-4">
+                                    <Button onClick={() => startGame("BLITZ")}>Blitz</Button>
+                                    <Button onClick={() => startGame("BULLET")}>Bullet</Button>
+                                </div> 
+                            </div>}
                         </div>
                         
                         <div>

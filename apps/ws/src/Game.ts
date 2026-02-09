@@ -6,6 +6,14 @@ import { randomUUID } from "crypto"
 import { SocketManager, type User } from "./SocketManager.js"
 import { calculateElo } from "./elo.js";
 import { getRedis } from "./redis.js";
+import {TimeControl} from "@prisma/client"
+
+export const TIME_CONTROL_TO_MS: Record<TimeControl, number> = {
+  [TimeControl.CLASSICAL]: 10 * 60 * 1000,
+  [TimeControl.RAPID]: 5 * 60 * 1000,
+  [TimeControl.BLITZ]: 3 * 60 * 1000,
+  [TimeControl.BULLET]: 1 * 60 * 1000,
+};
 
 export function isPromoting(chess: Chess, from: Square, to: Square){
         if(!from){
@@ -38,12 +46,14 @@ export class Game{
     public player2UserId: string | null;
     public board: Chess
     public moveCount: number; 
+    public timeControl: TimeControl;
     private startTime: Date
     private pendingDrawOfferFrom: "w" | "b" | null = null;
 
-    constructor(player1UserId: string, player2UserId: string | null){
+    constructor(player1UserId: string, player2UserId: string | null, timeControl: TimeControl){
         this.player1UserId = player1UserId;
         this.player2UserId = player2UserId;
+        this.timeControl = timeControl;
         this.board = new Chess();
         this.moveCount = 0;
         this.startTime = new Date()
@@ -140,6 +150,7 @@ export class Game{
 
 
     async updateSecondPlayer(player2UserId: string) {
+        const time = TIME_CONTROL_TO_MS[this.timeControl];
         this.player2UserId = player2UserId;
         if(player2UserId === this.player1UserId){
             return;
@@ -162,8 +173,8 @@ export class Game{
         const redis = getRedis();
 
         await redis.hset(`game:${this.gameId}`, {
-            whiteTime: 10 * 60 * 1000,
-            blackTime: 10 * 60 * 1000,
+            whiteTime: time,
+            blackTime: time,
             lastMoveAt: Date.now(),
             moveCount: 0,
             fen: this.board.fen(),
@@ -186,10 +197,15 @@ export class Game{
 
     async createGameInDb(){
         const now = BigInt(Date.now())
+        const time = TIME_CONTROL_TO_MS[this.timeControl];
+        console.log({
+  timeControl: this.timeControl,
+  time,
+});
         const game = await db.game.create({
             data: {
                 id: this.gameId,
-                timeControl: "CLASSICAL",
+                timeControl: this.timeControl,
                 status: "IN_PROGRESS",
                 currentFen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
                 whitePlayer: {
@@ -202,8 +218,8 @@ export class Game{
                         id: this.player2UserId ?? ""
                     }
                 },
-                white_time: 10*60*1000,
-                black_time: 10*60*1000,
+                white_time: time,
+                black_time: time,
                 last_move_at: now,
             },
             include: {

@@ -51,7 +51,7 @@ export function initPassport(){
       {
         clientID: GITHUB_CLIENT_ID,
         clientSecret: GITHUB_CLIENT_SECRET,
-        callbackURL: "/auth/github/callback",
+        callbackURL: `${BACKEND_URL}/auth/github/callback`,
       },
       async function (accessToken: string, refreshToken: string, profile: any, done: (error: any, user?: any) => void) {
         const user = await db.user.upsert({

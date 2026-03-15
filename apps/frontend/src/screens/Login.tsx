@@ -1,11 +1,11 @@
 import Google from "../assets/google.png";
 import Github from "../assets/github.png";
-import { useNavigate } from 'react-router-dom';
+
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const Login = () => {
-    const navigate = useNavigate();
+    
 
     const google = () => {
         window.open(`${BACKEND_URL}/auth/google`, "_self");

@@ -1,6 +1,5 @@
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { Strategy as GithubStrategy } from "passport-github2";
-import { Strategy as FacebookStrategy } from "passport-facebook";
 import passport from "passport";
 import "dotenv/config"
 import dotenv from "dotenv";
@@ -13,12 +12,10 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
-const FACEBOOK_APP_ID = process.env.FACEBOOK_APP_ID;
-const FACEBOOK_APP_SECRET = process.env.FACEBOOK_APP_SECRET;
 const BACKEND_URL = process.env.BACKEND_URL;
 
 export function initPassport(){
-  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET || !FACEBOOK_APP_ID || !FACEBOOK_APP_SECRET) {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET) {
     throw new Error('Missing environment variables for authentication providers');
   }
   passport.use(
@@ -91,24 +88,3 @@ export function initPassport(){
     });
   });
 }
-
-// passport.use(
-//   new FacebookStrategy(
-//     {
-//       clientID: FACEBOOK_APP_ID,
-//       clientSecret: FACEBOOK_APP_SECRET,
-//       callbackURL: "/auth/facebook/callback",
-//     },
-//     function (accessToken: string, refreshToken: string, profile: any, done: (error: any, user?: any) => void) {
-//       done(null, profile);
-//     }
-//   )
-// );
-
-// passport.serializeUser((user: any, done: (error: any, id?: any) => void) => {
-//   done(null, user);
-// });
-
-// passport.deserializeUser((user: any, done: (error: any, user?: any) => void) => {
-//   done(null, user);
-// });

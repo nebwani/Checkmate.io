@@ -39,25 +39,6 @@ const Login = () => {
                         Sign in with Github
                     </div>
                 </div>
-                <div className="flex flex-col items-center md:ml-8">
-                    <div className="flex items-center mb-4">
-                        <div className="bg-gray-600 h-1 w-12 mr-2"></div>
-                        <span className="text-gray-400">OR</span>
-                        <div className="bg-gray-600 h-1 w-12 ml-2"></div>
-                    </div>
-                    <input
-                        type="text"
-                        placeholder="Username"
-                        className="bg-gray-700 text-white px-4 py-2 rounded-md mb-4 w-full md:w-64"
-                    />
-                    
-                    <button
-                        className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition-colors duration-300"
-                        onClick={() => navigate('/game/random')}
-                    >
-                        Enter as Guest
-                    </button>
-                </div>
             </div>
         </div>
     );

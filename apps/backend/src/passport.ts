@@ -49,22 +49,24 @@ export function initPassport(){
   passport.use(
     new GithubStrategy(
       {
-        clientID: GITHUB_CLIENT_ID,
-        clientSecret: GITHUB_CLIENT_SECRET,
-        callbackURL: `${BACKEND_URL}/auth/github/callback`,
-      },
+      clientID: GITHUB_CLIENT_ID,
+      clientSecret: GITHUB_CLIENT_SECRET,
+      callbackURL: `${BACKEND_URL}/auth/github/callback`,
+      scope: ["user:email"],
+    },
       async function (accessToken: string, refreshToken: string, profile: any, done: (error: any, user?: any) => void) {
+        const email = profile.emails?.[0]?.value || `${profile.username}@github.com`;
         const user = await db.user.upsert({
           create: {
-            email: profile.emails[0].value,
-            name: profile.displayName,
+            email: email,
+            name: profile.displayName || profile.username,
             provider: "GITHUB",
           },
           update: {
-            name: profile.displayName,
+            name: profile.displayName || profile.username,
           },
           where: {
-            email: profile.emails[0].value,
+            email: email,
           }
         });
         done(null, user);

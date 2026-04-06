@@ -5,16 +5,15 @@ import { Landing } from './screens/Landing';
 import Login from './screens/Login';
 import { Game } from './screens/Game';
 import {RecoilRoot, useRecoilValue, useSetRecoilState} from 'recoil'
-import Loader from './components/Loader'
+// import Loader from './components/Loader'
 import { userAtom } from './store/src/atoms/user';
+import Profile from './screens/Profile';
 
 function App() {
   return (
     <div className='h-screen bg-slate-950'>
     <RecoilRoot>
-      <Suspense fallback={<Loader/>}>
-        <AuthApp/>
-      </Suspense> 
+      <AuthApp/>
     </RecoilRoot>
     </div>
   )
@@ -73,6 +72,7 @@ function AuthApp() {
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={user ? <Game /> : <Login />} />
         <Route path="/game/:gameId" element={user ? <Game /> : <Login />} />
+        <Route path="/user/:userId" element={<Profile />} />
       </Routes>
     </BrowserRouter>
   );

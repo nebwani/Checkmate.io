@@ -7,6 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useUser } from "../store/src/hooks/useUser";
 import { MovesTable } from "../components/MovesTable"
 import confetti from "canvas-confetti";
+import ProfileIcon from "../components/ProfileIcon";
 
 
 export const INIT_GAME = "init_game";
@@ -266,149 +267,162 @@ export const Game = () => {
     }
     
 
-    return <div>
-        <div className="flex justify-center text-white pt-4">
-            {gameMetadata?.whitePlayer?.name} {started && <p>vs</p>} {gameMetadata?.blackPlayer?.name}
+    return <div className="min-h-screen bg-linear-to-br from-gray-900 via-gray-800 to-black text-white">
+
+    {/* 🔝 TOP BAR */}
+    <div className="absolute top-4 right-6 py-2">
+        <div className="w-10 h-10 rounded-full overflow-hidden cursor-pointer hover:scale-105 transition">
+            <ProfileIcon />
         </div>
-        {result && <div className="flex justify-center text-white mt-4">
-            {result}
-        </div>}
-        <div className="flex justify-center">
-            <div className="pt-8 max-w-5xl flex justify-center w-full">
-                <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-                    
-                    <div className="md:col-span-4 flex flex-col">
-                        <div className="mb-2 flex justify-end p-1">
-                            <div className="mr-auto px-2">
-                                <div className="text-white text-l flex items-center justify-center">
-                                    {color === "w" ? gameMetadata?.blackPlayer?.name : gameMetadata?.whitePlayer?.name}
-                                </div>
-                                <div className="text-white text-[12px]">
-                                    {color === "w" ? gameMetadata?.blackPlayer?.rating : gameMetadata?.whitePlayer?.rating}
-                                </div>
-                                
-                            </div>
-                            <div className="ml-auto px-2">
-                                <div className={`w-20 h-10 border text-white text-xl flex items-center justify-center rounded ${chess.turn() !== color && started? " border-3 border-red-500" : ""}`}>
-                                    {color === "w" ? formatTime(blackTime) : formatTime(whiteTime)}
-                                </div>
-                                
-                            </div>
-                            
-                        </div>
-                        <div className={`flex items-center justify-center ${!started ? "pointer-events-none" : ""}`}>
-                            <ChessBoard lastMove={moves.at(-1)!} gameId  ={gameId ?? ""} chess={chess} setBoard={setBoard} socket={socket} board = {board} playColor = {user?.id === gameMetadata?.blackPlayer?.id ? "b" : "w"} spectatorMode = {user?.id !== gameMetadata?.blackPlayer.id && user?.id !== gameMetadata?.whitePlayer.id}/>
-                        </div>
-                        <div className="flex mt-2 justify-end p-1">
-                            <div className="mr-auto px-2">
-                                <div className="text-white text-l flex items-center justify-center">
-                                    {color === "w" ? gameMetadata?.whitePlayer?.name : gameMetadata?.blackPlayer?.name}
-                                </div>
-                                <div className="text-white text-[12px]">
-                                    {color === "w" ? gameMetadata?.whitePlayer?.rating : gameMetadata?.blackPlayer?.rating}
-                                </div>
-                                
-                            </div>          
-                            <div className="ml-auto px-2">
-                                <div className={`w-20 h-10 border text-white text-xl flex items-center justify-center rounded ${chess.turn() === color && started ? " border-2 border-red-500" : ""}`}>
-                                    {color === "w" ? formatTime(whiteTime) : formatTime(blackTime)}
-                                </div>
-                                
-                            </div>          
-                        </div>
-                    </div>
-                    
+    </div>
 
-                    <div className="col-span-2 justify-center bg-slate-900" >
-                        
-                        <div className=" text-white">
-                            {started && <div>
-                                    <div className="text-2xl justify-center flex mt-2 mb-4 underline">Moves Table</div>
-                                    <div className="grid grid-cols-[50px_1fr_1fr] gap-2 items-center">
-                                        <p>S. No.</p>
-                                        <p>White</p>
-                                        <p>Black</p>
-                                    </div>
-                                    <MovesTable sanMoves={sanMoves} currentMoveIndex={sanMoves.length - 1}/>
-                                </div>
-                            }
-                        </div>
-                        <div className="flex justify-center space-x-5">
-                            <div>
-                                {started && !result && (user?.id === gameMetadata?.blackPlayer.id || user?.id === gameMetadata?.whitePlayer.id) && (
-                                <button
-                                    onClick={() => {
-                                    socket.send(JSON.stringify({
-                                        type: "resign",
-                                        payload: { gameId }
-                                    }));
-                                    }}
-                                    className="bg-red-600 hover:bg-red-900 text-white font-bold py-2 px-4 rounded" 
-                                >
-                                    Resign
-                                </button>
-                                )}
-                            </div>
-                            <div>
-                                {started && !result && (user?.id === gameMetadata?.blackPlayer.id || user?.id === gameMetadata?.whitePlayer.id) && !drawOfferedBy && (
-                                <Button
-                                    onClick={() => {
-                                    socket.send(JSON.stringify({
-                                        type: "offer_draw",
-                                        payload: { gameId }
-                                    }));
-                                    }}
-                                >
-                                    Offer Draw
-                                </Button>
-                                )}
-                            </div>
-                        </div>
-                        {
-                            !initiated && gameId === "random" && 
-                            <div className="text-2xl text-white mt-5 text-center font-bold">
-                                Select Game Mode
-                            </div>
-                        }
-                        <div className="mt-5 flex justify-center">
-                            {!initiated && gameId === "random" && 
-                            <div className="flex flex-col space-y-4 justify-center">
-                                <div className="flex flex-col space-y-4">
-                                    <Button onClick={() => startGame("CLASSICAL")}>Classical</Button>
-                                    <Button onClick={() => startGame("RAPID")}>Rapid</Button>
-                                </div>
-                                <div className="flex flex-col space-y-4">
-                                    <Button onClick={() => startGame("BLITZ")}>Blitz</Button>
-                                    <Button onClick={() => startGame("BULLET")}>Bullet</Button>
-                                </div> 
-                            </div>}
-                        </div>
-                        
-                        <div>
-                            {drawOfferedBy && drawOfferedBy !== color && !result && (
-                            <div className="flex items-center space-x-5">
-                                <Button onClick={() => socket.send(JSON.stringify({
-                                type: "accept_draw",
-                                payload: { gameId }
-                                }))}>
-                                Accept Draw
-                                </Button>
+    {/* 🎮 GAME HEADER */}
+    <div className="text-center mt-4">
+        {result && (
+            <p className="mt-2 text-xl font-bold text-green-400">
+                {result}
+            </p>
+        )}
+    </div>
 
-                                <Button onClick={() => socket.send(JSON.stringify({
-                                type: "decline_draw",
-                                payload: { gameId }
-                                }))}>
-                                Decline
-                                </Button>
-                            </div>
-                            )}
-                        </div>
-                        <div className="flex justify-center text-white">
-                            {initiated && !started && <div> Connecting... </div>}
-                        </div>
-                    </div>
+    {/* 🧩 MAIN GRID */}
+    <div className="max-w-7xl mx-auto py-6 grid grid-cols-1 md:grid-cols-3 gap-6 px-4">
+
+        {/* ♟️ BOARD SECTION */}
+        <div className="md:col-span-2 bg-gray-800/80 border border-gray-700 rounded-2xl p-4 shadow-xl">
+
+            {/* Opponent */}
+            <div className="flex justify-between items-center mb-2">
+                <div>
+                    <p className="font-semibold">
+                        {color === "w" ? gameMetadata?.blackPlayer?.name : gameMetadata?.whitePlayer?.name}
+                    </p>
+                    <p className="text-sm text-gray-400">
+                        {color === "w" ? gameMetadata?.blackPlayer?.rating : gameMetadata?.whitePlayer?.rating}
+                    </p>
+                </div>
+
+                <div className="px-4 py-2 bg-gray-900 rounded-lg border border-gray-600 text-lg">
+                    {color === "w" ? formatTime(blackTime) : formatTime(whiteTime)}
+                </div>
+            </div>
+
+            {/* Board */}
+            <div className="flex justify-center">
+                <ChessBoard
+                    lastMove={moves.at(-1)!}
+                    gameId={gameId ?? ""}
+                    chess={chess}
+                    setBoard={setBoard}
+                    socket={socket}
+                    board={board}
+                    playColor={user?.id === gameMetadata?.blackPlayer?.id ? "b" : "w"}
+                    spectatorMode={
+                        user?.id !== gameMetadata?.blackPlayer.id &&
+                        user?.id !== gameMetadata?.whitePlayer.id
+                    }
+                />
+            </div>
+
+            {/* You */}
+            <div className="flex justify-between items-center mt-2">
+                <div>
+                    <p className="font-semibold">
+                        {color === "w" ? gameMetadata?.whitePlayer?.name : gameMetadata?.blackPlayer?.name}
+                    </p>
+                    <p className="text-sm text-gray-400">
+                        {color === "w" ? gameMetadata?.whitePlayer?.rating : gameMetadata?.blackPlayer?.rating}
+                    </p>
+                </div>
+
+                <div className="px-4 py-2 bg-gray-900 rounded-lg border border-gray-600 text-lg">
+                    {color === "w" ? formatTime(whiteTime) : formatTime(blackTime)}
                 </div>
             </div>
         </div>
+
+        {/* 📊 SIDEBAR */}
+        <div className="bg-gray-800/80 border border-gray-700 rounded-2xl p-4 shadow-xl flex flex-col gap-4">
+
+            {/* Moves */}
+            {started && (
+                <>
+                    <h3 className="text-lg font-semibold border-b border-gray-700 pb-2">
+                        Moves
+                    </h3>
+
+                    <div className="max-h-75 overflow-y-auto">
+                        <MovesTable
+                            sanMoves={sanMoves}
+                            currentMoveIndex={sanMoves.length - 1}
+                        />
+                    </div>
+                </>
+            )}
+
+            {/* Actions */}
+            <div className="flex flex-col gap-3 mt-2">
+
+                {started && !result && (
+                    <button
+                        onClick={() =>
+                            socket.send(JSON.stringify({
+                                type: "resign",
+                                payload: { gameId }
+                            }))
+                        }
+                        className="bg-red-600 hover:bg-red-700 py-2 rounded-lg font-semibold"
+                    >
+                        Resign
+                    </button>
+                )}
+
+                {started && !result && !drawOfferedBy && (
+                    <Button onClick={() => {
+                        socket.send(JSON.stringify({
+                            type: "offer_draw",
+                            payload: { gameId }
+                        }))
+                    }}>
+                        Offer Draw
+                    </Button>
+                )}
+
+                {drawOfferedBy && drawOfferedBy !== color && !result && (
+                    <div className="flex gap-2">
+                        <Button onClick={() => socket.send(JSON.stringify({
+                            type: "accept_draw",
+                            payload: { gameId }
+                        }))}>
+                            Accept
+                        </Button>
+
+                        <Button onClick={() => socket.send(JSON.stringify({
+                            type: "decline_draw",
+                            payload: { gameId }
+                        }))}>
+                            Decline
+                        </Button>
+                    </div>
+                )}
+            </div>
+
+            {/* Game Modes */}
+            {!initiated && gameId === "random" && (
+                <div className="flex flex-col gap-3 mt-4">
+                    <p className="text-center font-semibold">Select Mode</p>
+                    <Button onClick={() => startGame("CLASSICAL")}>Classical</Button>
+                    <Button onClick={() => startGame("RAPID")}>Rapid</Button>
+                    <Button onClick={() => startGame("BLITZ")}>Blitz</Button>
+                    <Button onClick={() => startGame("BULLET")}>Bullet</Button>
+                </div>
+            )}
+
+            {initiated && !started && (
+                <p className="text-center text-gray-400">Connecting...</p>
+            )}
+        </div>
+
     </div>
+</div>
 }

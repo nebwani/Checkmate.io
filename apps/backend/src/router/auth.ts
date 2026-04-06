@@ -49,15 +49,30 @@ router.get("/login/failed", (req: Request, res: Response) => {
 });
 
 
-router.get("/logout", (req: Request, res: Response) => {
+router.post("/logout", (req: Request, res: Response) => {
   req.logout((err) => {
     if(err){
       console.log('Error logging out:', err);
       res.status(500).json({error : 'Failed to log out'});
-    } else {
-      res.clearCookie('jwt');
-      res.redirect(CLIENT_URL);
     }
+
+    req.session.destroy((err) => {
+      if(err){
+        console.log('Session destroy error:', err);
+        return res.status(500).json({ error: 'Failed to destroy session' });
+      }
+      res.clearCookie("jwt", {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: isProd ? "none" : "lax",
+      });
+      res.clearCookie("session", {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: isProd ? "none" : "lax",
+      });
+      res.status(200).json({ message: "Logged out successfully" });
+    });
   });
 });
 

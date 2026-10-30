@@ -220,7 +220,7 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                         setLegalMoves([]);
                         setIsActive(false);
 
-                    }} key={cellIndex} className={`w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 ${(rowIndex + cellIndex) %2 ===0 ? "bg-[#fdcf9e]" : "bg-[#c4864a]"} flex justify-center items-center` + (isActive && from === squareRepresentation ? " border-2 border-red-500 bg-red-200 " : "") + ((lastMove?.from === squareRepresentation || lastMove?.to === squareRepresentation)  ? " bg-red-900" :  "")}>
+                    }} key={cellIndex} className={`w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 ${(rowIndex + cellIndex) %2 ===0 ? "bg-[#fdcf9e]" : "bg-[#c4864a]"} flex justify-center items-center` + (isActive && from === squareRepresentation ? " border-2 border-red-500 bg-[#ffd54f] " : "") + ((lastMove?.from === squareRepresentation || lastMove?.to === squareRepresentation)  ? " bg-[#ffd54f]" :  "")}>
                         <div className="w-full justify-center flex h-full">
                             <div className="h-full justify-center flex items-center">
                                 {cell && (

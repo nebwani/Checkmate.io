@@ -6,13 +6,13 @@ import { randomUUID } from "crypto"
 import { SocketManager, type User } from "./SocketManager.js"
 import { calculateElo } from "./elo.js";
 import { getRedis } from "./redis.js";
-import {TimeControl} from "@prisma/client"
+import { TimeControl, type GameResult } from "@prisma/client"
 
 export const TIME_CONTROL_TO_MS: Record<TimeControl, number> = {
   [TimeControl.CLASSICAL]: 10 * 60 * 1000,
   [TimeControl.RAPID]: 5 * 60 * 1000,
   [TimeControl.BLITZ]: 3 * 60 * 1000,
-  [TimeControl.BULLET]: 1 * 60 * 1000,
+  [TimeControl.BULLET]: 5 * 1000,
 };
 
 export function isPromoting(chess: Chess, from: Square, to: Square){
@@ -49,6 +49,8 @@ export class Game{
     public timeControl: TimeControl;
     private startTime: Date
     private pendingDrawOfferFrom: "w" | "b" | null = null;
+    private timer?: NodeJS.Timeout;
+    private over = false;
 
     constructor(player1UserId: string, player2UserId: string | null, timeControl: TimeControl){
         this.player1UserId = player1UserId;
@@ -67,36 +69,54 @@ export class Game{
         return null;
     }
 
-    async resign(user: User) {
-        const color = this.getPlayerColor(user.userId);
-        if (!color) return;
+    private scheduleTimeout(turn: "w" | "b", msLeft: number) {
+        clearTimeout(this.timer);
+        this.timer = setTimeout(
+            () => this.endGame(turn === "w" ? "BLACK_WINS" : "WHITE_WINS", "TIMEOUT"),
+            Math.max(0, msLeft)
+        );
+    }
 
-        const result = color === "w" ? "BLACK_WINS" : "WHITE_WINS";
+    private async endGame(result: GameResult, reason: string) {
+        if (this.over) return;          // idempotent: a second call does nothing
+        this.over = true;
+        clearTimeout(this.timer);
+        this.pendingDrawOfferFrom = null;
 
-        const white = await db.user.findUnique({ where: { id: this.player1UserId } });
-        const black = await db.user.findUnique({ where: { id: this.player2UserId! } });
-        if (!white || !black) return;
+        const [white, black] = await Promise.all([
+            db.user.findUnique({ where: { id: this.player1UserId } }),
+            db.user.findUnique({ where: { id: this.player2UserId! } }),
+        ]);
+        if (!white || !black) {
+            console.error("endGame: player not found for game", this.gameId);
+            return;
+        }
 
         const { newWhite, newBlack } = calculateElo(white.rating, black.rating, result);
 
         SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
             type: GAME_OVER,
-            payload: {
-                result,
-                reason: "RESIGNATION",
-                whiteRating: newWhite,
-                blackRating: newBlack,
-            }
+            payload: { result, reason, whiteRating: newWhite, blackRating: newBlack },
         }));
 
-        await db.$transaction([
-            db.user.update({ where: { id: white.id }, data: { rating: newWhite } }),
-            db.user.update({ where: { id: black.id }, data: { rating: newBlack } }),
-            db.game.update({
-                where: { id: this.gameId },
-                data: { status: "COMPLETED", result }
-            })
-        ]);
+        try {
+            await db.$transaction([
+                db.user.update({ where: { id: white.id }, data: { rating: newWhite } }),
+                db.user.update({ where: { id: black.id }, data: { rating: newBlack } }),
+                db.game.update({
+                    where: { id: this.gameId },
+                    data: { status: "COMPLETED", result, endAt: new Date() },
+                }),
+            ]);
+        } catch (err) {
+            console.error("endGame DB write failed:", err);
+        }
+    }
+
+    async resign(user: User) {
+        const color = this.getPlayerColor(user.userId);
+        if (!color || !this.player2UserId) return;
+        await this.endGame(color === "w" ? "BLACK_WINS" : "WHITE_WINS", "RESIGNATION");
     }
 
     offerDraw(user: User) {
@@ -115,24 +135,9 @@ export class Game{
 
     async acceptDraw(user: User) {
         const color = this.getPlayerColor(user.userId);
-        if (!color) return;
-
+        if (!color || this.over) return;
         if (!this.pendingDrawOfferFrom || this.pendingDrawOfferFrom === color) return;
-
-        this.pendingDrawOfferFrom = null;
-
-        SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
-            type: GAME_OVER,
-            payload: {
-                result: "DRAW",
-                reason: "AGREED_DRAW"
-            }
-        }));
-
-        await db.game.update({
-            where: { id: this.gameId },
-            data: { status: "COMPLETED", result: "DRAW" }
-        });
+        await this.endGame("DRAW", "AGREED_DRAW");
     }
 
     declineDraw(user: User) {
@@ -179,6 +184,8 @@ export class Game{
             moveCount: 0,
             fen: this.board.fen(),
         });
+
+        this.scheduleTimeout("w", time);    
 
         SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
         type: INIT_GAME,
@@ -264,67 +271,53 @@ export class Game{
         from: Square,
         to: Square,
         promotion?: string
-    }){
-        if(user.userId !== this.player1UserId && user.userId !== this.player2UserId){
-            return;
-        }
-        //validations
-        //is it the same users move
-        //is the move valid
-        // if(this.moveCount %2 ===0 && user.userId !== this.player1UserId){
-        //     return ;
-        // }
-        // if(this.moveCount %2 ===1 && user.userId !== this.player2UserId){
-        //     return ;
-        // }
+    }) {
         const redis = getRedis();
-
         const state = await redis.hgetall(`game:${this.gameId}`);
 
         if (!state || !state.lastMoveAt) {
-        console.log("Redis game state missing");
-        return;
-        }
-
-        let whiteTime = Number(state.whiteTime);
-        let blackTime = Number(state.blackTime);
-        let lastMoveAt = Number(state.lastMoveAt);
-        let moveCount = Number(state.moveCount);
-        this.moveCount = moveCount;
-        this.pendingDrawOfferFrom = null;
-
-
-        const now = Date.now();
-        const elapsed = now - lastMoveAt;
-
-        
-
-
-        try {
-            if(isPromoting(this.board, move.from, move.to)){
-                this.board.move({
-                    from: move.from,
-                    to: move.to,
-                    promotion: move.promotion ?? 'q',
-                });
-            } else {
-                this.board.move({
-                    from: move.from,
-                    to: move.to,
-                });
-            }
-
-        } catch (error) {
-            console.log(error);
-            
+            console.log("Redis game state missing");
             return;
         }
 
-        if (moveCount % 2 === 0) {
-        whiteTime -= elapsed;
-        } else {
-        blackTime -= elapsed;
+        // 1. Only a seated player, and only on their own turn.
+        //    (No `await` between this check and board.move() below, so it can't go stale.)
+        const color = this.getPlayerColor(user.userId);
+        if (this.over || !color || color !== this.board.turn()) return;
+
+        let whiteTime = Number(state.whiteTime);
+        let blackTime = Number(state.blackTime);
+        const lastMoveAt = Number(state.lastMoveAt);
+        const moveCount = Number(state.moveCount);
+        this.moveCount = moveCount;
+
+        // 2. Charge the mover's clock BEFORE touching the board
+        const now = Date.now();
+        const elapsed = now - lastMoveAt;
+        if (color === "w") whiteTime -= elapsed;
+        else blackTime -= elapsed;
+
+        // 3. Flag fall: the move is rejected, the board stays untouched
+        if ((color === "w" ? whiteTime : blackTime) <= 0) {
+            await this.endGame(color === "w" ? "BLACK_WINS" : "WHITE_WINS", "TIMEOUT");
+            return;
         }
+
+        // 4. Now it is safe to apply the move
+        try {
+            this.board.move({
+                from: move.from,
+                to: move.to,
+                ...(isPromoting(this.board, move.from, move.to)
+                    ? { promotion: move.promotion ?? "q" }
+                    : {}),
+            });
+        } catch (error) {
+            console.log(error);
+            return;
+        }
+
+        this.pendingDrawOfferFrom = null;   // only cleared by a legal move now
 
         await redis.hset(`game:${this.gameId}`, {
             whiteTime,
@@ -334,145 +327,31 @@ export class Game{
             fen: this.board.fen(),
         });
 
-
-        if (whiteTime <= 0) {
-            SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
-                type: GAME_OVER,
-                payload: {
-                    result: "BLACK_WINS"
-                }
-            }))
-            await db.game.update({
-                data: {
-                    result: "BLACK_WINS",
-                    status: "COMPLETED"
-                },      
-                where: {
-                    id: this.gameId,
-
-                }
-            })
-            return;
-        }
-
-        if (blackTime <= 0) {
-            SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
-                type: GAME_OVER,
-                payload: {
-                    result: "WHITE_WINS"
-                }
-            }))
-            await db.game.update({
-                data: {
-                    result: "WHITE_WINS",
-                    status: "COMPLETED"
-                },      
-                where: {
-                    id: this.gameId,
-
-                }
-            })
-            return;
-        }
-
-        const t0 = Date.now()
-
-
+        // persist clock + move in the background, as before
         db.game.update({
             where: { id: this.gameId },
-            data: {
-                white_time: whiteTime,
-                black_time: blackTime,
-                last_move_at: now,
-            },
+            data: { white_time: whiteTime, black_time: blackTime, last_move_at: now },
         }).catch(err => console.error("DB clock update failed:", err));
 
-        const t1 = Date.now()
-        console.log("move logic:", t1 - t0)
+        this.addMoveToDb(move).catch(err => console.error("DB move write failed:", err));
+        this.moveCount++;   // addMoveToDb has already read the old value synchronously
 
-
-        this.addMoveToDb(move).catch(err =>
-        console.error("DB move write failed:", err)
-        );
-
-        const t2 = Date.now()
-        console.log("db:", t2 - t1)
         SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
             type: MOVE,
-            payload: {
-                move,
-                whiteTime: whiteTime,
-                blackTime: blackTime,
-            }
-        }))
+            payload: { move, whiteTime, blackTime },
+        }));
 
-        if(this.board.isGameOver()){
-            const result = this.board.isDraw() ? "DRAW" : this.board.turn() === 'w' ? "BLACK_WINS" : "WHITE_WINS";
-
-            const white = await db.user.findUnique({
-                where: { id: this.player1UserId },
-            });
-
-            const black = await db.user.findUnique({
-                where: { id: this.player2UserId! },
-            });
-
-            if (!white || !black) return;
-
-            const {newWhite, newBlack} = calculateElo(white.rating, black.rating, result);
-
-            SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
-                type: GAME_OVER,
-                payload: {
-                    result,
-                    reason: "GAME OVER",
-                    whiteRating: newWhite,
-                    blackRating: newBlack
-                }
-            }))
-
-            await db.$transaction([
-                db.user.update({
-                    where: { id: white.id },
-                    data: { rating: newWhite },
-                }),
-                db.user.update({
-                    where: { id: black.id },
-                    data: { rating: newBlack },
-                }),
-                db.game.update({
-                    data: {
-                        result,
-                        status: "COMPLETED"
-                    },      
-                    where: {
-                        id: this.gameId,
-
-                    }
-                })
-            ])
-
-            await db.game.update({
-                data: {
-                    result,
-                    status: "COMPLETED"
-                },      
-                where: {
-                    id: this.gameId,
-
-                }
-            })
+        if (this.board.isGameOver()) {
+            await this.endGame(
+                this.board.isCheckmate() ? (color === "w" ? "WHITE_WINS" : "BLACK_WINS") : "DRAW",
+                this.board.isCheckmate() ? "CHECKMATE" : "DRAW"
+            );
+            return;
         }
 
-        
-
-        this.moveCount++;
-        
-        //update the board
-        //push the move
-        //check if the game is over
-
-        //send the updated board to both players
+        // the opponent's clock starts now
+        const next = this.board.turn();
+        this.scheduleTimeout(next, next === "w" ? whiteTime : blackTime);
     }
 }
     

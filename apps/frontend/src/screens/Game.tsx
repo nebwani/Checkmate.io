@@ -6,6 +6,8 @@ import { Chess, Move } from "chess.js";
 import { useNavigate, useParams } from "react-router-dom";
 import { useUser } from "../store/src/hooks/useUser";
 import { MovesTable } from "../components/MovesTable"
+import { Clock } from "../components/Clock";
+import { type ClockState, settleClock } from "../lib/clock";
 import confetti from "canvas-confetti";
 import ProfileIcon from "../components/ProfileIcon";
 
@@ -25,14 +27,6 @@ export const DECLINE_DRAW = "decline_draw";
 interface Metadata {
     blackPlayer: {id: string, name: string, rating: number};
     whitePlayer: {id: string, name: string, rating: number};
-}
-
-function formatTime(ms: number) {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function generateSanMoves(moves: { from: string; to: string; promotion?: string }[]) {
@@ -93,28 +87,17 @@ export const Game = () => {
     const [gameMetadata, setGameMetadata] = useState<Metadata | null>(null);
     const [result, setResult] = useState<"WHITE_WINS" | "BLACK_WINS" | "DRAW" | typeof OPPONENT_DISCONNECTED | null>(null);
     const [moves, setMoves] = useState<Move[]>([]);
-    const [whiteTime, setWhiteTime] = useState(0);
-    const [blackTime, setBlackTime] = useState(0);
+    // const [whiteTime, setWhiteTime] = useState(0);
+    // const [blackTime, setBlackTime] = useState(0);
+    // const [syncedAt, setSyncedAt] = useState(() => Date.now());
+    const [clock, setClock] = useState<ClockState>({
+        white: 0, black: 0, turn: null, syncedAt: Date.now(),
+    });
     const [drawOfferedBy, setDrawOfferedBy] = useState<"w" | "b" | null>(null);
     const confettiPlayedRef = useRef(false);
     const sanMoves = generateSanMoves(moves);
     const audio = new Audio("/MoveSound.mp3");
     
-
-    useEffect(() => {
-    const interval = setInterval(() => {
-        if(result){
-            return;
-        }
-        if (chess.turn() === "w") {
-        setWhiteTime(t => Math.max(0, t - 100));
-        } else {
-        setBlackTime(t => Math.max(0, t - 100));
-        }
-    }, 100);
-
-    return () => clearInterval(interval);
-    }, [chess.turn()]);
 
     useEffect(() => {
         if (!result || !user || !gameMetadata) return;
@@ -145,50 +128,51 @@ export const Game = () => {
             
             switch (message.type) {
                 case INIT_GAME:
-                    setBoard(chess.board())
+                    setBoard(chess.board());
                     setStarted(true);
-                    setWhiteTime(10*60*1000);
-                    setBlackTime(10*60*1000);
-                    // setInitiated(false);
+                    // setWhiteTime(message.payload.whiteTime);
+                    // setBlackTime(message.payload.blackTime);
+                    // setSyncedAt(Date.now());
                     navigate(`/game/${message.payload.gameId}`)
                     setGameMetadata({
                         blackPlayer: message.payload.blackPlayer,
                         whitePlayer: message.payload.whitePlayer,
                     })
                     setColor(user?.id === message.payload.blackPlayer.id ? "b" : "w");
+                    setClock({
+                        white: message.payload.whiteTime,
+                        black: message.payload.blackTime,
+                        turn: "w",
+                        syncedAt: Date.now(),
+                    });
                     break;
-                case MOVE:
-                    const move = message.payload.move;
-                    console.log(message.payload);
-                    // const moves = chess.moves({verbose: true});
-                    // if(moves.map(x => JSON.stringify(x)).includes(JSON.stringify(move)))return;
-                    // const { from, to } = move;
-                    
-                    if (
-                       (user?.id === gameMetadata?.whitePlayer.id && moves.length%2 === 0) ||  (user?.id === gameMetadata?.blackPlayer.id && moves.length%2 === 1)
-                    ) {
-                        // just sync clocks
-                        setMoves(m => [...m, move]);
-                        setWhiteTime(message.payload.whiteTime);
-                        setBlackTime(message.payload.blackTime);
-                        break;
+
+                case MOVE: {
+                    const { move, moveNumber, whiteTime, blackTime } = message.payload;
+
+                    // Our own move is already on the board; only apply the opponent's
+                    if (chess.history().length < moveNumber) {
+                        chess.move(move);
+                        setBoard(chess.board());
+                        audio.play();
                     }
+                    setMoves(m => (m.length < moveNumber ? [...m, move] : m));
 
-                    // opponent move → apply
-                    setMoves(m => [...m, move]);
-                    chess.move(move);
-                    setBoard(chess.board());
-                    audio.play();
-
-                    setWhiteTime(message.payload.whiteTime);
-                    setBlackTime(message.payload.blackTime);
-
-                    
-
-                    // setMoveCount(chess.history().length);
+                    setClock({
+                        white: whiteTime,
+                        black: blackTime,
+                        turn: moveNumber % 2 === 1 ? "b" : "w",
+                        syncedAt: Date.now(),
+                    });
                     break;
+                }
                 case GAME_OVER:
                     const gameResult = message.payload.result;
+                    const flagged = message.payload.reason === "TIMEOUT"
+                        ? (gameResult === "BLACK_WINS" ? "w" : "b")
+                        : undefined;
+
+                    setClock(c => settleClock(c, Date.now(), flagged));
                     setDrawOfferedBy(null);
                     setResult(gameResult);
                     setGameMetadata(prev => {
@@ -212,11 +196,22 @@ export const Game = () => {
                     break;
                 
                 case GAME_JOINED:
+                    const { moves, whiteTime, blackTime, result } = message.payload;
                     setGameMetadata({
                         blackPlayer: message.payload.blackPlayer,
                         whitePlayer: message.payload.whitePlayer
                     })
                     setStarted(true);
+                    // setWhiteTime(message.payload.whiteTime);
+                    // setBlackTime(message.payload.blackTime);
+                    // setSyncedAt(Date.now());
+                    setClock({
+                    white: whiteTime,
+                    black: blackTime,
+                    turn: result ? null : moves.length % 2 === 0 ? "w" : "b",
+                    syncedAt: Date.now(),
+                });
+                    setColor(user?.id === message.payload.blackPlayer.id ? "b" : "w");
                     setMoves(message.payload.moves);
                     message.payload.moves.map((x: Move) => {
                         // if(isPromoting(chess, x.from, x.to)){
@@ -257,6 +252,9 @@ export const Game = () => {
 
 
     if (!socket) return <div>Connecting...</div>
+
+    const whiteRunning = !result && clock.turn === "w";
+    const blackRunning = !result && clock.turn === "b";
 
     function startGame(mode: "CLASSICAL" | "RAPID" | "BLITZ" | "BULLET") {
         socket?.send(JSON.stringify({
@@ -302,9 +300,13 @@ export const Game = () => {
                     </p>
                 </div>
 
-                <div className="px-4 py-2 bg-gray-900 rounded-lg border border-gray-600 text-lg">
-                    {color === "w" ? formatTime(blackTime) : formatTime(whiteTime)}
-                </div>
+                {/* <div className="px-4 py-2 bg-gray-900 rounded-lg border border-gray-600 text-lg"> */}
+                    <Clock
+                        baseMs={color === "w" ? clock.black : clock.white}
+                        running={color === "w" ? blackRunning : whiteRunning}
+                        syncedAt={clock.syncedAt}
+                    />
+                {/* </div> */}
             </div>
 
             {/* Board */}
@@ -321,6 +323,7 @@ export const Game = () => {
                         user?.id !== gameMetadata?.blackPlayer.id &&
                         user?.id !== gameMetadata?.whitePlayer.id
                     }
+                    gameOver={!!result}
                 />
             </div>
 
@@ -335,9 +338,13 @@ export const Game = () => {
                     </p>
                 </div>
 
-                <div className="px-4 py-2 bg-gray-900 rounded-lg border border-gray-600 text-lg">
-                    {color === "w" ? formatTime(whiteTime) : formatTime(blackTime)}
-                </div>
+                {/* <div className="px-4 py-2 bg-gray-900 rounded-lg border border-gray-600 text-lg"> */}
+                    <Clock
+                        baseMs={color === "w" ? clock.white : clock.black}
+                        running={color === "w" ? whiteRunning : blackRunning}
+                        syncedAt={clock.syncedAt}
+                    />
+                {/* </div> */}
             </div>
         </div>
 

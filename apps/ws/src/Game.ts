@@ -12,7 +12,7 @@ export const TIME_CONTROL_TO_MS: Record<TimeControl, number> = {
   [TimeControl.CLASSICAL]: 10 * 60 * 1000,
   [TimeControl.RAPID]: 5 * 60 * 1000,
   [TimeControl.BLITZ]: 3 * 60 * 1000,
-  [TimeControl.BULLET]: 5 * 1000,
+  [TimeControl.BULLET]: 30 * 1000,
 };
 
 export function isPromoting(chess: Chess, from: Square, to: Square){
@@ -77,6 +77,27 @@ export class Game{
         );
     }
 
+    // What the clocks read at the moment the game ended
+    private async finalClock(result: GameResult, reason: string) {
+        const state = await getRedis().hgetall(`game:${this.gameId}`);
+        if (!state?.lastMoveAt) return null;
+
+        let white = Number(state.whiteTime);
+        let black = Number(state.blackTime);
+
+        if (reason === "TIMEOUT") {
+            // the side that lost on time is at exactly zero
+            if (result === "BLACK_WINS") white = 0;
+            else black = 0;
+        } else if (!this.board.isGameOver()) {
+            // resign / agreed draw: the side to move was still burning time
+            const elapsed = Date.now() - Number(state.lastMoveAt);
+            if (this.board.turn() === "w") white = Math.max(0, white - elapsed);
+            else black = Math.max(0, black - elapsed);
+        }
+        return { white, black };
+    }
+
     private async endGame(result: GameResult, reason: string) {
         if (this.over) return;          // idempotent: a second call does nothing
         this.over = true;
@@ -99,13 +120,15 @@ export class Game{
             payload: { result, reason, whiteRating: newWhite, blackRating: newBlack },
         }));
 
+        const final = await this.finalClock(result, reason);
+
         try {
             await db.$transaction([
                 db.user.update({ where: { id: white.id }, data: { rating: newWhite } }),
                 db.user.update({ where: { id: black.id }, data: { rating: newBlack } }),
                 db.game.update({
                     where: { id: this.gameId },
-                    data: { status: "COMPLETED", result, endAt: new Date() },
+                    data: { status: "COMPLETED", result, endAt: new Date(), ...(final ? { white_time: final.white, black_time: final.black } : {})},
                 }),
             ]);
         } catch (err) {
@@ -194,7 +217,9 @@ export class Game{
             whitePlayer: { name: users.find(user => user.id === this.player1UserId)?.name, id: this.player1UserId, rating: users.find(user => user.id === this.player1UserId)?.rating},
             blackPlayer: { name: users.find(user => user.id === this.player2UserId)?.name, id: this.player2UserId, rating: users.find(user => user.id === this.player2UserId)?.rating},
             fen: this.board.fen(),
-            moves:[]
+            moves:[],
+            whiteTime: time,
+            blackTime: time,
         }
         }))  
 
@@ -338,7 +363,7 @@ export class Game{
 
         SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
             type: MOVE,
-            payload: { move, whiteTime, blackTime },
+            payload: { move, moveNumber: this.moveCount, whiteTime, blackTime },
         }));
 
         if (this.board.isGameOver()) {

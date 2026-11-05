@@ -1,5 +1,5 @@
 import { Chess, Move, type Color, type PieceSymbol, type Square } from "chess.js";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MOVE } from "../screens/Game.tsx";
 import PromotionModal from "./PromotionModal.tsx";
 
@@ -28,7 +28,7 @@ export function isPromoting(chess: Chess, from: Square, to: Square){
     }
 
 
-export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor , lastMove, spectatorMode} : {
+export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor , lastMove, spectatorMode, gameOver} : {
     gameId: string | null   ;
     chess: Chess;
     setBoard: React.Dispatch<React.SetStateAction<({
@@ -48,6 +48,7 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
         to: string
     } | null
     spectatorMode: boolean;
+    gameOver: boolean;
 }) => {
     const [from, setFrom] = useState<null | Square>(null);
     const [isActive, setIsActive] = useState<boolean>(false);
@@ -55,6 +56,15 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
     const [promotion, setPromotion] = useState<{from: Square; to: Square;} | null>(null);
     const [dragFrom, setDragFrom] = useState<Square | null>(null);
     const isBlack = playColor === "b";
+
+    useEffect(() => {
+        if (!gameOver) return;
+        setFrom(null);
+        setLegalMoves([]);
+        setIsActive(false);
+        setDragFrom(null);
+        setPromotion(null);
+    }, [gameOver]);
 
 
     function handlePromotionSelect(piece: PieceSymbol) {
@@ -105,9 +115,10 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                     return <div onClick={() => {
                         
                         
-                        if(spectatorMode){
-                            return;
-                        }
+                        // if(spectatorMode){
+                        //     return;
+                        // }
+                        if (spectatorMode || gameOver) return;
 
                         if(playColor !== (chess.turn() === 'w' ? "w" : "b")){
                             return;
@@ -191,6 +202,7 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
 
                     onDrop={(e) => {
                     e.preventDefault();
+                    if (gameOver) return;
                     if (!dragFrom) return;
 
                     if (!legalMoves.some(m => m.to === squareRepresentation)) return;
@@ -225,10 +237,11 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                             <div className="h-full justify-center flex items-center">
                                 {cell && (
                                 <img
-                                    draggable={!spectatorMode && cell.color === chess.turn() && playColor === (chess.turn() === 'w' ? "w" : "b")}
-                                    
+                                    // draggable={!spectatorMode && cell.color === chess.turn() && playColor === (chess.turn() === 'w' ? "w" : "b")}
+                                    draggable={!spectatorMode && !gameOver && cell.color === chess.turn() && playColor === (chess.turn() === 'w' ? "w" : "b")}
                                     onDragStart={(e) => {
-                                        if (spectatorMode) return;
+                                        // if (spectatorMode) return;
+                                        if (spectatorMode || gameOver) return;
                                         if (cell.color !== chess.turn()) return;
 
                                         setDragFrom(squareRepresentation);

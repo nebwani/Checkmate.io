@@ -2,7 +2,7 @@ import { WebSocket } from "ws";
 import { INIT_GAME, JOIN_GAME, MOVE, OPPONENT_DISCONNECTED, JOIN_ROOM, GAME_NOT_FOUND, GAME_JOINED, RESIGN, OFFER_DRAW, ACCEPT_DRAW, DECLINE_DRAW } from "./messages.js";
 import { Game } from "./Game.js";
 // import { Move } from "chess.js";
-
+import { getRedis } from "./redis.js";
 import { db } from "@repo/db";
 import { SocketManager, User } from "./SocketManager.js";
 import {TimeControl} from "@prisma/client"
@@ -114,6 +114,36 @@ export class GameManager{
                     this.games.push(game);  
                 }
 
+                // Clock as of right now: prefer Redis (live), fall back to the DB snapshot
+                let whiteTime = gameFromDb.white_time;
+                let blackTime = gameFromDb.black_time;
+                let lastMoveAt = Number(gameFromDb.last_move_at);
+
+                // const live = await getRedis().hgetall(`game:${gameId}`);
+                // if (live?.lastMoveAt) {
+                //     whiteTime = Number(live.whiteTime);
+                //     blackTime = Number(live.blackTime);
+                //     lastMoveAt = Number(live.lastMoveAt);
+                // }
+
+                const live = gameFromDb.status === "IN_PROGRESS"
+                    ? await getRedis().hgetall(`game:${gameId}`)
+                    : null;
+                if (live?.lastMoveAt) {
+                    whiteTime = Number(live.whiteTime);
+                    blackTime = Number(live.blackTime);
+                    lastMoveAt = Number(live.lastMoveAt);
+                }
+
+                // The side to move has been burning time since lastMoveAt
+                if (gameFromDb.status === "IN_PROGRESS") {
+                    const elapsed = Date.now() - lastMoveAt;
+                    if (gameFromDb.moves.length % 2 === 0) whiteTime -= elapsed;
+                    else blackTime -= elapsed;
+                }
+                whiteTime = Math.max(0, whiteTime);
+                blackTime = Math.max(0, blackTime);
+
                 user.socket.send(JSON.stringify({
                     type: GAME_JOINED,
                     payload: {
@@ -129,7 +159,9 @@ export class GameManager{
                             name: gameFromDb.whitePlayer.name,
                             rating: gameFromDb.whitePlayer.rating
                         },
-                        result: gameFromDb.result
+                        result: gameFromDb.result,
+                        whiteTime,
+                        blackTime
                     }
                 }));    
 

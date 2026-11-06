@@ -30,16 +30,16 @@ interface Metadata {
     whitePlayer: {id: string, name: string, rating: number};
 }
 
-function generateSanMoves(moves: { from: string; to: string; promotion?: string }[]) {
-  const chess = new Chess();
-  return moves.map(move => {
-    const result = chess.move(move);
-    if (!result) {
-      throw new Error("Invalid move while generating SAN");
-    }
-    return result.san;
-  });
-}
+// function generateSanMoves(moves: { from: string; to: string; promotion?: string }[]) {
+//   const chess = new Chess();
+//   return moves.map(move => {
+//     const result = chess.move(move);
+//     if (!result) {
+//       throw new Error("Invalid move while generating SAN");
+//     }
+//     return result.san;
+//   });
+// }
 
 function fireConfetti() {
   const canvas = document.createElement("canvas");
@@ -102,7 +102,7 @@ export const Game = () => {
     const [resultReason, setResultReason] = useState<string | null>(null);
     const [gameMetadata, setGameMetadata] = useState<Metadata | null>(null);
     const [result, setResult] = useState<"WHITE_WINS" | "BLACK_WINS" | "DRAW" | typeof OPPONENT_DISCONNECTED | null>(null);
-    const [moves, setMoves] = useState<Move[]>([]);
+    const [_, setMoves] = useState<Move[]>([]);
     // const [whiteTime, setWhiteTime] = useState(0);
     // const [blackTime, setBlackTime] = useState(0);
     // const [syncedAt, setSyncedAt] = useState(() => Date.now());

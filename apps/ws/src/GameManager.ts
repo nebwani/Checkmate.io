@@ -1,195 +1,168 @@
-import { WebSocket } from "ws";
-import { INIT_GAME, JOIN_GAME, MOVE, OPPONENT_DISCONNECTED, JOIN_ROOM, GAME_NOT_FOUND, GAME_JOINED, RESIGN, OFFER_DRAW, ACCEPT_DRAW, DECLINE_DRAW } from "./messages.js";
-import { Game } from "./Game.js";
-// import { Move } from "chess.js";
-import { getRedis } from "./redis.js";
+import type { RawData } from "ws";
 import { db } from "@repo/db";
-import { SocketManager, User } from "./SocketManager.js";
-import {TimeControl} from "@prisma/client"
+import { TimeControl } from "@prisma/client";
+import { getRedis } from "./redis.js";
+import { Game } from "./Game.js";
+import { SocketManager, type User } from "./SocketManager.js";
+import {
+    INIT_GAME, MOVE, JOIN_ROOM, GAME_NOT_FOUND, GAME_JOINED,
+    RESIGN, OFFER_DRAW, ACCEPT_DRAW, DECLINE_DRAW,
+} from "./messages.js";
 
-
-
-export class GameManager{
-    private games: Game[];
+export class GameManager {
+    private games = new Map<string, Game>();
     private pendingGames: Partial<Record<TimeControl, string | undefined>> = {};
-    private users: User[];
-    
-    constructor(){
-        this.games = []
-        this.users = []
-    }
-    addUser(user: User){
-        this.users.push(user);
-        this.addHandler(user);
+
+    addUser(user: User) {
+        user.socket.on("message", async (data) => {
+            const message = this.parse(data);
+            if (!message) return;                 // not JSON, or no "type": ignore
+
+            try {
+                await this.handleMessage(user, message.type, message.payload);
+            } catch (err) {
+                // One bad message or a DB hiccup must never take the server down
+                console.error(`Error handling "${message.type}" from ${user.userId}:`, err);
+            }
+        });
     }
 
-    removeUser(socket: WebSocket, userId: string){
-        const user = this.users.find(user => user.id === userId);
-        if(!user){
-            console.log("User Not Found");
+    removeUser(user: User) {
+        SocketManager.getInstance().removeUser(user);
+    }
+
+    private parse(data: RawData): { type: string; payload: any } | null {
+        try {
+            const m = JSON.parse(data.toString());
+            return m && typeof m.type === "string"
+                ? { type: m.type, payload: m.payload ?? {} }
+                : null;
+        } catch {
+            return null;
+        }
+    }
+
+    // Register a game and make it unregister itself when it ends
+    private track(game: Game) {
+        this.games.set(game.gameId, game);
+        game.onOver = () => this.games.delete(game.gameId);
+    }
+
+    private async handleMessage(user: User, type: string, payload: any) {
+        switch (type) {
+            case INIT_GAME:    return this.handleInitGame(user, payload.mode);
+            case JOIN_ROOM:    return this.handleJoinRoom(user, payload.gameId);
+            case MOVE:         return this.games.get(payload.gameId)?.makeMove(user, payload.move);
+            case RESIGN:       return this.games.get(payload.gameId)?.resign(user);
+            case OFFER_DRAW:   return this.games.get(payload.gameId)?.offerDraw(user);
+            case ACCEPT_DRAW:  return this.games.get(payload.gameId)?.acceptDraw(user);
+            case DECLINE_DRAW: return this.games.get(payload.gameId)?.declineDraw(user);
+        }
+    }
+
+    private async handleInitGame(user: User, timeControl: TimeControl) {
+        if (!Object.values(TimeControl).includes(timeControl)) return;   // unknown mode
+
+        const pendingId = this.pendingGames[timeControl];
+        const waiting = pendingId ? this.games.get(pendingId) : undefined;
+
+        if (waiting) {
+            if (waiting.player1UserId === user.userId) return;   // already waiting (other tab)
+            // Claim the slot BEFORE awaiting, so two joiners can't get the same game
+            this.pendingGames[timeControl] = undefined;
+            SocketManager.getInstance().addUser(user, waiting.gameId);
+            await waiting.updateSecondPlayer(user.userId);
             return;
         }
-        this.users = this.users.filter(user => user.id !== userId);
-        SocketManager.getInstance().removeUser(user)
+
+        const game = new Game(user.userId, null, timeControl);
+        this.track(game);
+        this.pendingGames[timeControl] = game.gameId;
+        SocketManager.getInstance().addUser(user, game.gameId);
     }
 
-    private addHandler(user: User){
-        user.socket.on('message', async(data) => {
-            // not using grpc in order to keep it clean
-            const message = JSON.parse(data.toString());
-            if(message.type === INIT_GAME){
-                const timeControl: TimeControl = message.payload.mode;
-                console.log("INIT_GAME received from:", user.userId);
-                const pendingGameId = this.pendingGames[timeControl];
-                if(pendingGameId){
-                    //start a game
-                    
-                    const game = this.games.find(x => x.gameId === pendingGameId);
-                    if(!game){
-                        console.log("Pending Game not found");
-                        this.pendingGames[timeControl] = undefined;
-                        return;                    
-                    }
-                    SocketManager.getInstance().addUser(user, game.gameId);
-                    await game?.updateSecondPlayer(user.userId);            
-                    this.pendingGames[timeControl] = undefined;
-                }
-                else {
-                    const game = new Game(user.userId, null, timeControl);
-                    console.log(timeControl);
-                    
-                    this.games.push(game);
-                    this.pendingGames[timeControl] = game.gameId;
-                    SocketManager.getInstance().addUser(user, game.gameId);
-                }
+    private async handleJoinRoom(user: User, gameId: unknown) {
+        if (typeof gameId !== "string") return;
+
+        const gameFromDb = await db.game.findUnique({
+            where: { id: gameId },
+            include: {
+                moves: { orderBy: { moveNumber: "asc" } },
+                blackPlayer: true,
+                whitePlayer: true,
+            },
+        });
+
+        if (!gameFromDb) {
+            user.socket.send(JSON.stringify({ type: GAME_NOT_FOUND }));
+            return;
+        }
+
+        const inProgress = gameFromDb.status === "IN_PROGRESS";
+
+        // Clock snapshot as of lastMoveAt: Redis is live while the game runs,
+        // Postgres is the fallback (and the final record once it's over)
+        let white = gameFromDb.white_time;
+        let black = gameFromDb.black_time;
+        let lastMoveAt = Number(gameFromDb.last_move_at);
+
+        if (inProgress) {
+            const live = await getRedis().hgetall(`game:${gameId}`);
+            if (live?.lastMoveAt) {
+                white = Number(live.whiteTime);
+                black = Number(live.blackTime);
+                lastMoveAt = Number(live.lastMoveAt);
             }
+        }
 
-            if(message.type === MOVE){
-                const gameId = message.payload.gameId;
-                const game = this.games.find(game => game.gameId === gameId);
-                if(game){
-                    game.makeMove(user, message.payload.move)
-                }
+        // Look up AFTER the awaits: another JOIN_ROOM may have restored it meanwhile
+        let game = this.games.get(gameId);
+        if (!game && inProgress) {
+            game = new Game(
+                gameFromDb.whitePlayerId,
+                gameFromDb.blackPlayerId,
+                gameFromDb.timeControl,
+                gameId                      // keep the real id (this was the bug)
+            );
+            this.track(game);               // register before awaiting so a concurrent join reuses it
+            try {
+                await game.restore(gameFromDb.moves, { white, black, lastMoveAt });
+            } catch (err) {
+                this.games.delete(gameId);  // don't leave a half-restored game registered
+                throw err;                  // logged by the catch in addUser()
             }
+        }
 
+        // Clocks as of right now: the side to move has been burning time since lastMoveAt
+        const whiteToMove = gameFromDb.moves.length % 2 === 0;
+        const elapsed = inProgress ? Date.now() - lastMoveAt : 0;
+        const whiteTime = Math.max(0, white - (whiteToMove ? elapsed : 0));
+        const blackTime = Math.max(0, black - (whiteToMove ? 0 : elapsed));
 
-            if(message.type === JOIN_ROOM){
-                const gameId = message.payload?.gameId
-                if(!gameId){
-                    return;
-                }
+        // Keep everything from here to addUser() synchronous: if restore() scheduled an
+        // immediate timeout, GAME_JOINED still goes out before GAME_OVER, and this user
+        // is already in the room when GAME_OVER is broadcast.
+        user.socket.send(JSON.stringify({
+            type: GAME_JOINED,
+            payload: {
+                gameId,
+                moves: gameFromDb.moves,
+                blackPlayer: {
+                    id: gameFromDb.blackPlayer.id,
+                    name: gameFromDb.blackPlayer.name,
+                    rating: gameFromDb.blackPlayer.rating,
+                },
+                whitePlayer: {
+                    id: gameFromDb.whitePlayer.id,
+                    name: gameFromDb.whitePlayer.name,
+                    rating: gameFromDb.whitePlayer.rating,
+                },
+                result: gameFromDb.result,
+                whiteTime,
+                blackTime,
+            },
+        }));
 
-                const availableGame = this.games.find(game => game.gameId === gameId)
-
-                const gameFromDb = await db.game.findUnique({
-                    where: { id: gameId, }, include: {
-                        moves: {
-                            orderBy: {
-                                moveNumber: "asc"
-                            }
-                        },
-                        blackPlayer: true,
-                        whitePlayer: true
-                    }
-                })
-
-                if(!gameFromDb){
-                    user.socket.send(JSON.stringify({
-                        type: GAME_NOT_FOUND,
-                    }));    
-                    return;
-                }
-
-                if(!availableGame){
-                    const game = new Game(gameFromDb?.whitePlayerId!, gameFromDb?.blackPlayerId!, gameFromDb.timeControl);
-                    gameFromDb?.moves.forEach((move) => {
-                    
-                        game.board.move({
-                            from: move.from,
-                            to: move.to,
-                            ...(move.promotion ? { promotion: move.promotion } : {})
-                        });
-                        
-                    });
-                    this.games.push(game);  
-                }
-
-                // Clock as of right now: prefer Redis (live), fall back to the DB snapshot
-                let whiteTime = gameFromDb.white_time;
-                let blackTime = gameFromDb.black_time;
-                let lastMoveAt = Number(gameFromDb.last_move_at);
-
-                // const live = await getRedis().hgetall(`game:${gameId}`);
-                // if (live?.lastMoveAt) {
-                //     whiteTime = Number(live.whiteTime);
-                //     blackTime = Number(live.blackTime);
-                //     lastMoveAt = Number(live.lastMoveAt);
-                // }
-
-                const live = gameFromDb.status === "IN_PROGRESS"
-                    ? await getRedis().hgetall(`game:${gameId}`)
-                    : null;
-                if (live?.lastMoveAt) {
-                    whiteTime = Number(live.whiteTime);
-                    blackTime = Number(live.blackTime);
-                    lastMoveAt = Number(live.lastMoveAt);
-                }
-
-                // The side to move has been burning time since lastMoveAt
-                if (gameFromDb.status === "IN_PROGRESS") {
-                    const elapsed = Date.now() - lastMoveAt;
-                    if (gameFromDb.moves.length % 2 === 0) whiteTime -= elapsed;
-                    else blackTime -= elapsed;
-                }
-                whiteTime = Math.max(0, whiteTime);
-                blackTime = Math.max(0, blackTime);
-
-                user.socket.send(JSON.stringify({
-                    type: GAME_JOINED,
-                    payload: {
-                        gameId,
-                        moves: gameFromDb.moves,
-                        blackPlayer: {
-                            id: gameFromDb.blackPlayer.id,
-                            name: gameFromDb.blackPlayer.name,
-                            rating: gameFromDb.blackPlayer.rating
-                        },
-                        whitePlayer: {
-                            id: gameFromDb.whitePlayer.id,
-                            name: gameFromDb.whitePlayer.name,
-                            rating: gameFromDb.whitePlayer.rating
-                        },
-                        result: gameFromDb.result,
-                        whiteTime,
-                        blackTime
-                    }
-                }));    
-
-                SocketManager.getInstance().addUser(user, gameId)
-
-
-
-            }
-
-            if (message.type === RESIGN) {
-                const game = this.games.find(g => g.gameId === message.payload.gameId);
-                if (game) await game.resign(user);
-            }
-
-            if (message.type === OFFER_DRAW) {
-                const game = this.games.find(g => g.gameId === message.payload.gameId);
-                if (game) game.offerDraw(user);
-            }
-
-            if (message.type === ACCEPT_DRAW) {
-                const game = this.games.find(g => g.gameId === message.payload.gameId);
-                if (game) await game.acceptDraw(user);
-            }
-
-            if (message.type === DECLINE_DRAW) {
-                const game = this.games.find(g => g.gameId === message.payload.gameId);
-                if (game) game.declineDraw(user);
-            }
-        })
+        SocketManager.getInstance().addUser(user, gameId);
     }
 }

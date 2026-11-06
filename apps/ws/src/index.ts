@@ -1,23 +1,29 @@
-import { WebSocketServer } from 'ws';
-import { GameManager } from './GameManager.js';
-import url from "url";
-import { extractUserId } from './auth/index.js';
-import { User } from './SocketManager.js';
-import { getRedis } from './redis.js';
+import { WebSocketServer } from "ws";
+import { GameManager } from "./GameManager.js";
+import { extractUserId } from "./auth/index.js";
+import { User } from "./SocketManager.js";
+import { getRedis } from "./redis.js";
 
 const wss = new WebSocketServer({ port: 8080 });
-getRedis()
+getRedis();
 
 const gameManager = new GameManager();
+console.log("WS server listening on :8080");
 
-console.log("New WS connection");
+wss.on("connection", (ws, req) => {
+    // Without this, any protocol error on the socket throws and kills the process
+    ws.on("error", (err) => console.error("Socket error:", err.message));
 
-wss.on('connection', function connection(ws, req) {
+    const token = new URL(req.url ?? "/", "http://localhost").searchParams.get("token");
+    const userId = extractUserId(token);
 
-  //@ts-ignore
-  const token: string = url.parse(req.url, true).query.token;
-  const userId = extractUserId(token);
-  gameManager.addUser(new User( ws, userId));
+    if (!userId) {
+        ws.close(1008, "Unauthorized");   // 1008 = policy violation
+        return;
+    }
 
-  ws.on('close', () => gameManager.removeUser(ws, userId))
+    const user = new User(ws, userId);
+    gameManager.addUser(user);
+
+    ws.on("close", () => gameManager.removeUser(user));   // pass the User, not the account id
 });

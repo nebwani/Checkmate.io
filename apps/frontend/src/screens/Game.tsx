@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useMemo } from "react"
 import { Button } from "../components/Button"
 import { ChessBoard} from "../components/ChessBoard"
 import { useSocket } from "../hooks/useSocket"
@@ -8,6 +8,7 @@ import { useUser } from "../store/src/hooks/useUser";
 import { MovesTable } from "../components/MovesTable"
 import { Clock } from "../components/Clock";
 import { type ClockState, settleClock } from "../lib/clock";
+import { playMoveSound } from "../lib/sounds";
 import confetti from "canvas-confetti";
 import ProfileIcon from "../components/ProfileIcon";
 
@@ -70,6 +71,21 @@ function fireConfetti() {
   }, 4000);
 }
 
+const REASON_TEXT: Record<string, string> = {
+  TIMEOUT: "on time",
+  RESIGNATION: "by resignation",
+  CHECKMATE: "by checkmate",
+  AGREED_DRAW: "by agreement",
+};
+
+function describeResult(result: string, reason: string | null) {
+  const base =
+    result === "WHITE_WINS" ? "White wins" :
+    result === "BLACK_WINS" ? "Black wins" :
+    result === "DRAW" ? "Draw" : "Opponent disconnected";
+  const why = reason ? REASON_TEXT[reason] : undefined;
+  return why ? `${base} ${why}` : base;
+}
 
 
 export const Game = () => {
@@ -79,11 +95,11 @@ export const Game = () => {
     const user = useUser();
 
     const navigate = useNavigate();
-    const [chess] = useState(new Chess());
+    const [chess] = useState(() => new Chess());
     const [board, setBoard] = useState(chess.board());
     const [started, setStarted] = useState(false);
     const [initiated, setInitiated] = useState(false);
-    const [color, setColor] = useState<"w" | "b" | null>(null);
+    const [resultReason, setResultReason] = useState<string | null>(null);
     const [gameMetadata, setGameMetadata] = useState<Metadata | null>(null);
     const [result, setResult] = useState<"WHITE_WINS" | "BLACK_WINS" | "DRAW" | typeof OPPONENT_DISCONNECTED | null>(null);
     const [moves, setMoves] = useState<Move[]>([]);
@@ -95,10 +111,10 @@ export const Game = () => {
     });
     const [drawOfferedBy, setDrawOfferedBy] = useState<"w" | "b" | null>(null);
     const confettiPlayedRef = useRef(false);
-    const sanMoves = generateSanMoves(moves);
-    const audio = new Audio("/MoveSound.mp3");
+    const color: "w" | "b" = user?.id === gameMetadata?.blackPlayer?.id ? "b" : "w";
+    const sanMoves = useMemo(() => chess.history(), [chess, board]);
     
-
+    
     useEffect(() => {
         if (!result || !user || !gameMetadata) return;
         if (confettiPlayedRef.current) return;
@@ -113,11 +129,14 @@ export const Game = () => {
 
         if (didWhiteWin || didBlackWin) {
             confettiPlayedRef.current = true;
-            console.log("CONFETTI FIRED");
             fireConfetti();
         }
     }, [result, user, gameMetadata]);
 
+    const lastMove = useMemo(
+        () => chess.history({ verbose: true }).at(-1) ?? null,
+        [chess, board]
+    );  
 
     useEffect(() => {
         if(!socket){
@@ -138,7 +157,6 @@ export const Game = () => {
                         blackPlayer: message.payload.blackPlayer,
                         whitePlayer: message.payload.whitePlayer,
                     })
-                    setColor(user?.id === message.payload.blackPlayer.id ? "b" : "w");
                     setClock({
                         white: message.payload.whiteTime,
                         black: message.payload.blackTime,
@@ -154,7 +172,7 @@ export const Game = () => {
                     if (chess.history().length < moveNumber) {
                         chess.move(move);
                         setBoard(chess.board());
-                        audio.play();
+                        playMoveSound();
                     }
                     setMoves(m => (m.length < moveNumber ? [...m, move] : m));
 
@@ -175,6 +193,7 @@ export const Game = () => {
                     setClock(c => settleClock(c, Date.now(), flagged));
                     setDrawOfferedBy(null);
                     setResult(gameResult);
+                    setResultReason(message.payload.reason ?? null);
                     setGameMetadata(prev => {
                         if (!prev) return prev;
 
@@ -211,7 +230,6 @@ export const Game = () => {
                     turn: result ? null : moves.length % 2 === 0 ? "w" : "b",
                     syncedAt: Date.now(),
                 });
-                    setColor(user?.id === message.payload.blackPlayer.id ? "b" : "w");
                     setMoves(message.payload.moves);
                     message.payload.moves.map((x: Move) => {
                         // if(isPromoting(chess, x.from, x.to)){
@@ -278,7 +296,7 @@ export const Game = () => {
     <div className="text-center mt-4">
         {result && (
             <p className="mt-2 text-xl font-bold text-green-400">
-                {result}
+                {describeResult(result, resultReason)}
             </p>
         )}
     </div>
@@ -312,7 +330,7 @@ export const Game = () => {
             {/* Board */}
             <div className="flex justify-center">
                 <ChessBoard
-                    lastMove={moves.at(-1)!}
+                    lastMove={lastMove}
                     gameId={gameId ?? ""}
                     chess={chess}
                     setBoard={setBoard}

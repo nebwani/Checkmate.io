@@ -1,6 +1,7 @@
 import { Chess, Move, type Color, type PieceSymbol, type Square } from "chess.js";
 import { useEffect, useState } from "react";
 import { MOVE } from "../screens/Game.tsx";
+import { playMoveSound } from "../lib/sounds";
 import PromotionModal from "./PromotionModal.tsx";
 
 export function isPromoting(chess: Chess, from: Square, to: Square){
@@ -77,7 +78,7 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
         });
         setBoard(chess.board());
 
-        new Audio("/MoveSound.mp3").play();
+        playMoveSound();
 
         socket.send(JSON.stringify({
             type: MOVE,
@@ -111,6 +112,14 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                         : 8 - rowIndex;                             // 8 → 1
 
                     const squareRepresentation = `${file}${rank}` as Square;
+                    const isLight = (rowIndex + cellIndex) % 2 === 0;
+                    const isSelected = isActive && from === squareRepresentation;
+                    const isLastMove =
+                        lastMove?.from === squareRepresentation || lastMove?.to === squareRepresentation;
+
+                    const bg = isSelected ? "bg-red-300"
+                            : isLastMove ? "bg-yellow-400/70"
+                            : isLight ? "bg-[#fdcf9e]" : "bg-[#c4864a]";
                     // const squareRepresentation = String.fromCharCode(97 + (cellIndex % 8)) + "" + (8 - rowIndex) as Square
                     return <div onClick={() => {
                         
@@ -150,7 +159,7 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                                 chess.move({ from, to: squareRepresentation });
                                 setBoard(chess.board());
 
-                                new Audio("/MoveSound.mp3").play();
+                                playMoveSound();
 
     
                                 socket.send(JSON.stringify({
@@ -214,7 +223,7 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
 
                     chess.move({ from: dragFrom, to: squareRepresentation });
                     setBoard(chess.board());
-                    new Audio("/MoveSound.mp3").play();
+                    playMoveSound();
 
                     socket.send(JSON.stringify({
                         type: MOVE,
@@ -232,7 +241,7 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                         setLegalMoves([]);
                         setIsActive(false);
 
-                    }} key={cellIndex} className={`w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 ${(rowIndex + cellIndex) %2 ===0 ? "bg-[#fdcf9e]" : "bg-[#c4864a]"} flex justify-center items-center` + (isActive && from === squareRepresentation ? " border-2 border-red-500 bg-[#ffd54f] " : "") + ((lastMove?.from === squareRepresentation || lastMove?.to === squareRepresentation)  ? " bg-[#ffd54f]" :  "")}>
+                    }} key={cellIndex} className={`relative w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 flex justify-center items-center ${bg} ${isSelected ? "ring-2 ring-inset ring-red-500" : ""}`}>
                         <div className="w-full justify-center flex h-full">
                             <div className="h-full justify-center flex items-center">
                                 {cell && (
@@ -265,16 +274,19 @@ export const ChessBoard = ({ gameId, chess, board, socket, setBoard, playColor ,
                                     src={`/${cell.color === "b" ? cell.type : `${cell.type.toUpperCase()} Copy`}.png`}
                                 />
                                 )}
-
-                                {
-                                    ((!isBlack && rowIndex === 7) || (isBlack && rowIndex === 7)) ? <div className="absolute w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 z-100 flex items-end justify-end pointer-events-none"><div className="absolute w-3 h-3 md:w-5 md:h-5 z-50 text-right items-end text-[10px] md:text-[15px] font-mono font-extrabold pointer-events-none">{squareRepresentation[0]}</div></div> : null
-                                    
-                                }
-                                {
-                                    ((!isBlack && cellIndex === 0) || (isBlack && cellIndex === 0)) ? <div className="absolute w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 z-100 flex items-top justify-left pointer-events-none"><div className="absolute w-2 h-2 md:w-5 md:h-5 z-50 text-left text-[10px] md:text-[15px] font-mono font-extrabold pointer-events-none">{squareRepresentation[1]}</div></div> : null
-                                }
-                                
-                                {legalMoves.some(m => m.to === squareRepresentation) && ( <div className=" h-4 w-4 rounded-full bg-black/30 pointer-events-none z+10 flex" /> )}
+                                {rowIndex === 7 && (
+                                    <span className="absolute bottom-px right-0.5 text-[10px] md:text-sm font-mono font-bold text-black/70 pointer-events-none select-none">
+                                        {file}
+                                    </span>
+                                )}
+                                {cellIndex === 0 && (
+                                    <span className="absolute top-px left-0.5 text-[10px] md:text-sm font-mono font-bold text-black/70 pointer-events-none select-none">
+                                        {rank}
+                                    </span>
+                                )}
+                                {legalMoves.some(m => m.to === squareRepresentation) && (
+                                    <div className="absolute h-4 w-4 rounded-full bg-black/30 pointer-events-none" />
+                                )}
                                 
                             </div>
                         </div>

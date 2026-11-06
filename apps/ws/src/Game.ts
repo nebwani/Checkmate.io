@@ -51,15 +51,16 @@ export class Game{
     private pendingDrawOfferFrom: "w" | "b" | null = null;
     private timer?: NodeJS.Timeout;
     private over = false;
+    public onOver?: () => void; // the manager uses this to drop finished games from memory
 
-    constructor(player1UserId: string, player2UserId: string | null, timeControl: TimeControl){
+    constructor(player1UserId: string, player2UserId: string | null, timeControl: TimeControl, gameId?: string){
         this.player1UserId = player1UserId;
         this.player2UserId = player2UserId;
         this.timeControl = timeControl;
         this.board = new Chess();
         this.moveCount = 0;
         this.startTime = new Date()
-        this.gameId = randomUUID();
+        this.gameId = gameId ?? randomUUID();
 
     }
 
@@ -99,40 +100,47 @@ export class Game{
     }
 
     private async endGame(result: GameResult, reason: string) {
-        if (this.over) return;          // idempotent: a second call does nothing
+        if (this.over) return;
         this.over = true;
         clearTimeout(this.timer);
         this.pendingDrawOfferFrom = null;
 
-        const [white, black] = await Promise.all([
-            db.user.findUnique({ where: { id: this.player1UserId } }),
-            db.user.findUnique({ where: { id: this.player2UserId! } }),
-        ]);
-        if (!white || !black) {
-            console.error("endGame: player not found for game", this.gameId);
-            return;
-        }
-
-        const { newWhite, newBlack } = calculateElo(white.rating, black.rating, result);
-
-        SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
-            type: GAME_OVER,
-            payload: { result, reason, whiteRating: newWhite, blackRating: newBlack },
-        }));
-
-        const final = await this.finalClock(result, reason);
-
         try {
+            const [white, black] = await Promise.all([
+                db.user.findUnique({ where: { id: this.player1UserId } }),
+                db.user.findUnique({ where: { id: this.player2UserId! } }),
+            ]);
+            if (!white || !black) {
+                console.error("endGame: player not found for game", this.gameId);
+                return;
+            }
+
+            const { newWhite, newBlack } = calculateElo(white.rating, black.rating, result);
+
+            SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
+                type: GAME_OVER,
+                payload: { result, reason, whiteRating: newWhite, blackRating: newBlack },
+            }));
+
+            const final = await this.finalClock(result, reason).catch(() => null);
+
             await db.$transaction([
                 db.user.update({ where: { id: white.id }, data: { rating: newWhite } }),
                 db.user.update({ where: { id: black.id }, data: { rating: newBlack } }),
                 db.game.update({
                     where: { id: this.gameId },
-                    data: { status: "COMPLETED", result, endAt: new Date(), ...(final ? { white_time: final.white, black_time: final.black } : {})},
+                    data: {
+                        status: "COMPLETED",
+                        result,
+                        endAt: new Date(),
+                        ...(final ? { white_time: final.white, black_time: final.black } : {}),
+                    },
                 }),
             ]);
         } catch (err) {
-            console.error("endGame DB write failed:", err);
+            console.error("endGame failed:", err);
+        } finally {
+            this.onOver?.();
         }
     }
 
@@ -221,19 +229,49 @@ export class Game{
             whiteTime: time,
             blackTime: time,
         }
-        }))  
+    }))  
+    
+}
 
+    // Rebuild an in-progress game after a server restart.
+    // `clock` is the snapshot as of lastMoveAt (NOT already reduced by elapsed time).
+    async restore(
+        moves: { from: string; to: string; promotion: string | null }[],
+        clock: { white: number; black: number; lastMoveAt: number }
+    ) {
+        for (const m of moves) {
+            this.board.move({
+                from: m.from,
+                to: m.to,
+                ...(m.promotion ? { promotion: m.promotion } : {}),
+            });
+        }
+        this.moveCount = moves.length;
+
+        // makeMove reads the clock from Redis, so make sure it's there
+        await getRedis().hset(`game:${this.gameId}`, {
+            whiteTime: clock.white,
+            blackTime: clock.black,
+            lastMoveAt: clock.lastMoveAt,
+            moveCount: moves.length,
+            fen: this.board.fen(),
+        });
+
+        // The side to move has been burning time since lastMoveAt. If that already
+        // ran out while the server was down, left <= 0 and the timer fires right away.
+        const turn = this.board.turn();
+        const left = (turn === "w" ? clock.white : clock.black) - (Date.now() - clock.lastMoveAt);
+        this.scheduleTimeout(turn, left);
     }
 
-    
 
     async createGameInDb(){
         const now = BigInt(Date.now())
         const time = TIME_CONTROL_TO_MS[this.timeControl];
         console.log({
-  timeControl: this.timeControl,
-  time,
-});
+        timeControl: this.timeControl,
+        time,
+        });
         const game = await db.game.create({
             data: {
                 id: this.gameId,

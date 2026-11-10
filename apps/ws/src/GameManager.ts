@@ -12,6 +12,7 @@ import {
 export class GameManager {
     private games = new Map<string, Game>();
     private pendingGames: Partial<Record<TimeControl, string | undefined>> = {};
+    private pendingOwners = new Map<string, User>();   // waiting gameId -> the socket that created it
 
     addUser(user: User) {
         user.socket.on("message", async (data) => {
@@ -29,6 +30,16 @@ export class GameManager {
 
     removeUser(user: User) {
         SocketManager.getInstance().removeUser(user);
+
+        // Left while waiting for an opponent: drop the empty game so nobody gets matched into it
+        for (const [gameId, owner] of this.pendingOwners) {
+            if (owner !== user) continue;
+            this.pendingOwners.delete(gameId);
+            this.games.delete(gameId);
+            for (const tc of Object.values(TimeControl)) {
+                if (this.pendingGames[tc] === gameId) this.pendingGames[tc] = undefined;
+            }
+        }
     }
 
     private parse(data: RawData): { type: string; payload: any } | null {
@@ -70,6 +81,7 @@ export class GameManager {
             if (waiting.player1UserId === user.userId) return;   // already waiting (other tab)
             // Claim the slot BEFORE awaiting, so two joiners can't get the same game
             this.pendingGames[timeControl] = undefined;
+            this.pendingOwners.delete(waiting.gameId);
             SocketManager.getInstance().addUser(user, waiting.gameId);
             await waiting.updateSecondPlayer(user.userId);
             return;
@@ -78,11 +90,15 @@ export class GameManager {
         const game = new Game(user.userId, null, timeControl);
         this.track(game);
         this.pendingGames[timeControl] = game.gameId;
+        this.pendingOwners.set(game.gameId, user);
         SocketManager.getInstance().addUser(user, game.gameId);
     }
 
     private async handleJoinRoom(user: User, gameId: unknown) {
         if (typeof gameId !== "string") return;
+
+        // A live game may still have move writes in flight: wait, so the DB read below includes them
+        await this.games.get(gameId)?.flush();
 
         const gameFromDb = await db.game.findUnique({
             where: { id: gameId },
@@ -129,6 +145,7 @@ export class GameManager {
                 await game.restore(gameFromDb.moves, { white, black, lastMoveAt });
             } catch (err) {
                 this.games.delete(gameId);  // don't leave a half-restored game registered
+                user.socket.send(JSON.stringify({ type: GAME_NOT_FOUND }));
                 throw err;                  // logged by the catch in addUser()
             }
         }

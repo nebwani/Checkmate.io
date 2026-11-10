@@ -87,6 +87,22 @@ function describeResult(result: string, reason: string | null) {
   return why ? `${base} ${why}` : base;
 }
 
+// Rebuild the position from the server's move list. Throws if there's a gap or an illegal move.
+function replayMoves(
+    chess: Chess,
+    moves: { from: string; to: string; promotion?: string | null }[]
+) {
+    chess.reset();
+    for (const m of moves) {
+        const played = chess.move({
+            from: m.from,
+            to: m.to,
+            ...(m.promotion ? { promotion: m.promotion } : {}),
+        });
+        if (!played) throw new Error(`Illegal move ${m.from}-${m.to}`);
+    }
+}
+
 
 export const Game = () => {
 
@@ -98,20 +114,26 @@ export const Game = () => {
     const [chess] = useState(() => new Chess());
     const [board, setBoard] = useState(chess.board());
     const [started, setStarted] = useState(false);
-    const [initiated, setInitiated] = useState(false);
+    const [initiatedOn, setInitiatedOn] = useState<WebSocket | null>(null);
     const [resultReason, setResultReason] = useState<string | null>(null);
     const [gameMetadata, setGameMetadata] = useState<Metadata | null>(null);
     const [result, setResult] = useState<"WHITE_WINS" | "BLACK_WINS" | "DRAW" | typeof OPPONENT_DISCONNECTED | null>(null);
     const [_, setMoves] = useState<Move[]>([]);
+    const [loadError, setLoadError] = useState<string | null>(null);
     // const [whiteTime, setWhiteTime] = useState(0);
     // const [blackTime, setBlackTime] = useState(0);
     // const [syncedAt, setSyncedAt] = useState(() => Date.now());
+    const initiated = !!socket && initiatedOn === socket; 
+    // the socket handler outlives renders, so it reads the current id from a ref
+    const gameIdRef = useRef(gameId);
+    useEffect(() => { gameIdRef.current = gameId; }, [gameId]);  
     const [clock, setClock] = useState<ClockState>({
         white: 0, black: 0, turn: null, syncedAt: Date.now(),
     });
     const [drawOfferedBy, setDrawOfferedBy] = useState<"w" | "b" | null>(null);
     const confettiPlayedRef = useRef(false);
     const color: "w" | "b" = user?.id === gameMetadata?.blackPlayer?.id ? "b" : "w";
+    const isPlayer = !!gameMetadata && (user?.id === gameMetadata.whitePlayer.id || user?.id === gameMetadata.blackPlayer.id);
     const sanMoves = useMemo(() => chess.history(), [chess, board]);
     
     
@@ -142,6 +164,7 @@ export const Game = () => {
         if(!socket){
             return;
         }
+        const resync = () => socket.send(JSON.stringify({ type: JOIN_ROOM, payload: { gameId: gameIdRef.current } }));
         socket.onmessage = (event) => {
             const message = JSON.parse(event.data)
             
@@ -167,10 +190,22 @@ export const Game = () => {
 
                 case MOVE: {
                     const { move, moveNumber, whiteTime, blackTime } = message.payload;
+                    const have = chess.history().length;
+
+                    // We skipped a move (e.g. one landed while we were joining): get the full state again
+                    if (moveNumber > have + 1) {
+                        resync();
+                        break;
+                    }
 
                     // Our own move is already on the board; only apply the opponent's
-                    if (chess.history().length < moveNumber) {
-                        chess.move(move);
+                    if (moveNumber > have) {
+                        try {
+                            chess.move(move);
+                        } catch {
+                            resync();          // our position disagrees with the server's: trust the server
+                            break;
+                        }
                         setBoard(chess.board());
                         playMoveSound();
                     }
@@ -214,36 +249,40 @@ export const Game = () => {
                     setResult(OPPONENT_DISCONNECTED);
                     break;
                 
-                case GAME_JOINED:
+                case GAME_JOINED: {
                     const { moves, whiteTime, blackTime, result } = message.payload;
+
                     setGameMetadata({
                         blackPlayer: message.payload.blackPlayer,
-                        whitePlayer: message.payload.whitePlayer
-                    })
+                        whitePlayer: message.payload.whitePlayer,
+                    });
                     setStarted(true);
-                    // setWhiteTime(message.payload.whiteTime);
-                    // setBlackTime(message.payload.blackTime);
-                    // setSyncedAt(Date.now());
-                    setClock({
-                    white: whiteTime,
-                    black: blackTime,
-                    turn: result ? null : moves.length % 2 === 0 ? "w" : "b",
-                    syncedAt: Date.now(),
-                });
-                    setMoves(message.payload.moves);
-                    message.payload.moves.map((x: Move) => {
-                        // if(isPromoting(chess, x.from, x.to)){
-                        //     chess.move({...x, promotion: 'q'})
-                        // } else {
-                        //     chess.move(x);
-                        // }
-                        chess.move(x);
-                        
-                    })
-                    setBoard(chess.board());
-                    if(message.payload.result){
-                        setResult(message.payload.result);
+
+                    let replayed = true;
+                    try {
+                        replayMoves(chess, moves);
+                        setLoadError(null);
+                    } catch (err) {
+                        replayed = false;
+                        console.error("Could not replay game history:", err);
+                        chess.reset();
+                        setLoadError("This game's move history is incomplete, so it can't be shown.");
                     }
+
+                    setMoves(moves);
+                    setBoard(chess.board());
+                    setClock({
+                        white: whiteTime,
+                        black: blackTime,
+                        turn: result || !replayed ? null : moves.length % 2 === 0 ? "w" : "b",
+                        syncedAt: Date.now(),
+                    });
+                    if (result) setResult(result);
+                    break;
+                }
+
+                case GAME_NOT_FOUND:
+                    setLoadError("This game could not be loaded.");
                     break;
 
                 case OFFER_DRAW:
@@ -269,7 +308,7 @@ export const Game = () => {
     }, [chess, socket])
 
 
-    if (!socket) return <div>Connecting...</div>
+    if (!socket) return <div>{started ? "Connection lost. Reconnecting..." : "Connecting..."}</div>
 
     const whiteRunning = !result && clock.turn === "w";
     const blackRunning = !result && clock.turn === "b";
@@ -279,7 +318,7 @@ export const Game = () => {
             type: INIT_GAME,
             payload: { mode }
         }));
-        setInitiated(true);
+        setInitiatedOn(socket);
     }
     
 
@@ -293,11 +332,12 @@ export const Game = () => {
     </div>
 
     {/* 🎮 GAME HEADER */}
-    <div className="text-center mt-4">
-        {result && (
-            <p className="mt-2 text-xl font-bold text-green-400">
-                {describeResult(result, resultReason)}
-            </p>
+    <div className="pt-6 text-center">
+        <p className="text-xl font-bold text-green-400 min-h-7">
+            {result ? describeResult(result, resultReason) : "\u00a0"}
+        </p>
+        {loadError && (
+            <p className="mt-2 text-lg font-semibold text-red-400">{loadError}</p>
         )}
     </div>
 
@@ -337,11 +377,8 @@ export const Game = () => {
                     socket={socket}
                     board={board}
                     playColor={user?.id === gameMetadata?.blackPlayer?.id ? "b" : "w"}
-                    spectatorMode={
-                        user?.id !== gameMetadata?.blackPlayer.id &&
-                        user?.id !== gameMetadata?.whitePlayer.id
-                    }
-                    gameOver={!!result}
+                    spectatorMode={!isPlayer}
+                    gameOver={!!result || !!loadError}
                 />
             </div>
 
@@ -388,7 +425,7 @@ export const Game = () => {
             {/* Actions */}
             <div className="flex flex-col gap-3 mt-2">
 
-                {started && !result && (
+                {isPlayer && started && !result && !loadError && (
                     <button
                         onClick={() =>
                             socket.send(JSON.stringify({
@@ -402,7 +439,7 @@ export const Game = () => {
                     </button>
                 )}
 
-                {started && !result && !drawOfferedBy && (
+                {isPlayer && started && !result && !loadError && !drawOfferedBy && (
                     <Button onClick={() => {
                         socket.send(JSON.stringify({
                             type: "offer_draw",
@@ -413,7 +450,7 @@ export const Game = () => {
                     </Button>
                 )}
 
-                {drawOfferedBy && drawOfferedBy !== color && !result && (
+                {isPlayer && drawOfferedBy && drawOfferedBy !== color && !result && (
                     <div className="flex gap-2">
                         <Button onClick={() => socket.send(JSON.stringify({
                             type: "accept_draw",

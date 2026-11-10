@@ -1,4 +1,4 @@
-import { Chess, type Square } from "chess.js";
+import { Chess, type Square, type Move } from "chess.js";
 import type WebSocket from "ws";
 import { DECLINE_DRAW, GAME_OVER, INIT_GAME, MOVE, OFFER_DRAW } from "./messages.js";
 import{db} from "@repo/db"
@@ -51,6 +51,8 @@ export class Game{
     private pendingDrawOfferFrom: "w" | "b" | null = null;
     private timer?: NodeJS.Timeout;
     private over = false;
+    private moveLock: Promise<void> = Promise.resolve();
+    private dbQueue: Promise<void> = Promise.resolve();
     public onOver?: () => void; // the manager uses this to drop finished games from memory
 
     constructor(player1UserId: string, player2UserId: string | null, timeControl: TimeControl, gameId?: string){
@@ -123,6 +125,7 @@ export class Game{
             }));
 
             const final = await this.finalClock(result, reason).catch(() => null);
+            await this.flush();  
 
             await db.$transaction([
                 db.user.update({ where: { id: white.id }, data: { rating: newWhite } }),
@@ -236,9 +239,15 @@ export class Game{
     // Rebuild an in-progress game after a server restart.
     // `clock` is the snapshot as of lastMoveAt (NOT already reduced by elapsed time).
     async restore(
-        moves: { from: string; to: string; promotion: string | null }[],
+        moves: { moveNumber: number; from: string; to: string; promotion: string | null }[],
         clock: { white: number; black: number; lastMoveAt: number }
     ) {
+        // A missing row means a write was lost: say so, instead of a confusing chess.js error
+        moves.forEach((m, i) => {
+            if (m.moveNumber !== i + 1) {
+                throw new Error(`Game ${this.gameId}: move history has a gap at move ${i + 1}`);
+            }
+        });
         for (const m of moves) {
             this.board.move({
                 from: m.from,
@@ -300,41 +309,75 @@ export class Game{
         this.gameId = game.id
     }
 
-    async addMoveToDb(move: {
-        from: string;
-        to: string;
-        promotion?: string;
-    }) {
-
-        await db.$transaction([
-            db.move.create({
-                data: {
-                    gameId: this.gameId,
-                    moveNumber: this.moveCount + 1,
-                    from: move.from,
-                    to: move.to,
-                    promotion: move.promotion ?? null,
-                    startFen: this.board.fen(),
-                    endFen: this.board.fen(),
-                    createdAt: new Date(Date.now()),
-                },
-            }), 
-            db.game.update({
-                data: {
-                    currentFen: this.board.fen()
-                },
-                where: {
-                    id: this.gameId
-                }
-            })
-        ])
+    // Resolves once every queued write has finished (or been given up on and logged)
+    flush() {
+        return this.dbQueue;
     }
 
-    async makeMove(user: User, move: {
-        from: Square,
-        to: Square,
-        promotion?: string
+    private enqueueMoveWrite(w: {
+        moveNumber: number;
+        move: { from: string; to: string; promotion?: string };
+        startFen: string;
+        endFen: string;
+        timeTaken: number;
+        whiteTime: number;
+        blackTime: number;
+        movedAt: number;
     }) {
+        // One id for every attempt: if an attempt actually committed but its reply was lost,
+        // the retry hits a duplicate id (P2002) and is treated as done, never a second row
+        const id = randomUUID();
+
+        this.dbQueue = this.dbQueue
+            .then(async () => {
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                    try {
+                        await db.$transaction([
+                            db.move.create({
+                                data: {
+                                    id,
+                                    gameId: this.gameId,
+                                    moveNumber: w.moveNumber,
+                                    from: w.move.from,
+                                    to: w.move.to,
+                                    promotion: w.move.promotion ?? null,
+                                    startFen: w.startFen,
+                                    endFen: w.endFen,
+                                    timeTaken: w.timeTaken,
+                                    createdAt: new Date(w.movedAt),
+                                },
+                            }),
+                            db.game.update({
+                                where: { id: this.gameId },
+                                data: {
+                                    currentFen: w.endFen,
+                                    white_time: w.whiteTime,
+                                    black_time: w.blackTime,
+                                    last_move_at: w.movedAt,
+                                },
+                            }),
+                        ]);
+                        return;
+                    } catch (err) {
+                        if ((err as { code?: string }).code === "P2002") return;   // already written
+                        console.error(`Game ${this.gameId} move ${w.moveNumber}: DB write failed (attempt ${attempt}/3):`, err);
+                        await new Promise(r => setTimeout(r, 200 * attempt));
+                    }
+                }
+                console.error(`GIVING UP on move ${w.moveNumber} of game ${this.gameId}: DB history now has a gap`);
+            })
+            .catch(err => console.error("DB queue error:", err));   // a bug here must never block later writes
+    }
+
+    // Moves for one game run strictly one after another, so each one sees the Redis
+    // state (clock, moveCount) written by the one before it
+    makeMove(user: User, move: { from: Square; to: Square; promotion?: string }) {
+        const run = this.moveLock.then(() => this.applyMove(user, move));
+        this.moveLock = run.catch(() => {});   // one failed move must not block the next
+        return run;                            // the caller still sees the error
+    }
+
+    private async applyMove(user: User, move: { from: Square; to: Square; promotion?: string }) {
         const redis = getRedis();
         const state = await redis.hgetall(`game:${this.gameId}`);
 
@@ -343,16 +386,13 @@ export class Game{
             return;
         }
 
-        // 1. Only a seated player, and only on their own turn.
-        //    (No `await` between this check and board.move() below, so it can't go stale.)
+        // 1. Only a seated player, and only on their own turn
         const color = this.getPlayerColor(user.userId);
         if (this.over || !color || color !== this.board.turn()) return;
 
         let whiteTime = Number(state.whiteTime);
         let blackTime = Number(state.blackTime);
         const lastMoveAt = Number(state.lastMoveAt);
-        const moveCount = Number(state.moveCount);
-        this.moveCount = moveCount;
 
         // 2. Charge the mover's clock BEFORE touching the board
         const now = Date.now();
@@ -366,9 +406,11 @@ export class Game{
             return;
         }
 
-        // 4. Now it is safe to apply the move
+        // 4. Apply the move
+        const startFen = this.board.fen();   // the position BEFORE the move
+        let applied: Move;
         try {
-            this.board.move({
+            applied = this.board.move({
                 from: move.from,
                 to: move.to,
                 ...(isPromoting(this.board, move.from, move.to)
@@ -380,28 +422,41 @@ export class Game{
             return;
         }
 
-        this.pendingDrawOfferFrom = null;   // only cleared by a legal move now
+        // What the server actually played, not what the client claimed
+        const played = {
+            from: applied.from,
+            to: applied.to,
+            ...(applied.promotion ? { promotion: applied.promotion } : {}),
+        };
+
+        // Everything the move changes in memory happens here, before any await
+        const endFen = this.board.fen();
+        const moveNumber = Number(state.moveCount) + 1;
+        this.moveCount = moveNumber;
+        this.pendingDrawOfferFrom = null;
 
         await redis.hset(`game:${this.gameId}`, {
             whiteTime,
             blackTime,
             lastMoveAt: now,
-            moveCount: moveCount + 1,
-            fen: this.board.fen(),
+            moveCount: moveNumber,
+            fen: endFen,
         });
 
-        // persist clock + move in the background, as before
-        db.game.update({
-            where: { id: this.gameId },
-            data: { white_time: whiteTime, black_time: blackTime, last_move_at: now },
-        }).catch(err => console.error("DB clock update failed:", err));
-
-        this.addMoveToDb(move).catch(err => console.error("DB move write failed:", err));
-        this.moveCount++;   // addMoveToDb has already read the old value synchronously
+        this.enqueueMoveWrite({
+            moveNumber,
+            move: played,
+            startFen,
+            endFen,
+            timeTaken: elapsed,
+            whiteTime,
+            blackTime,
+            movedAt: now,
+        });
 
         SocketManager.getInstance().broadcast(this.gameId, JSON.stringify({
             type: MOVE,
-            payload: { move, moveNumber: this.moveCount, whiteTime, blackTime },
+            payload: { move: played, moveNumber, whiteTime, blackTime },
         }));
 
         if (this.board.isGameOver()) {

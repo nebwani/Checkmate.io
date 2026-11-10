@@ -31,7 +31,11 @@ export class SocketManager {
     }
 
     addUser(user: User, roomId: string){
-        this.interestedSockets.set(roomId, [...(this.interestedSockets.get(roomId) || []), user])
+        const previous = this.userRoomMapping.get(user.id);
+        if (previous === roomId) return;        // already in this room: joining twice must not duplicate
+        if (previous) this.removeUser(user);    // a socket sits in one room at a time
+
+        this.interestedSockets.set(roomId, [...(this.interestedSockets.get(roomId) || []), user]);
         this.userRoomMapping.set(user.id, roomId);
     }
 
